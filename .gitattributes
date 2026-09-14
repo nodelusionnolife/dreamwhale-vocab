@@ -1,0 +1,12 @@
+# 行尾统一：仓库内一律 LF。
+# 不加这个，Windows 检出的 CRLF 会和仓库里的内容不一致，别人（或 CI）会看到整个仓库都被改过。
+* text=auto eol=lf
+
+# 二进制素材：不要做行尾转换，也不要让 diff 试图按文本处理
+*.jpg binary
+*.png binary
+*.webp binary
+*.gif binary
+
+# 构建产物在 diff 里没有可读性，折叠掉
+dist/* linguist-generated=true

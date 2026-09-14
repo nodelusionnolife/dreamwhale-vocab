@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>梦鲸词汇 · 鲸鱼娘对话副本</title>
+<style>
+  :root {
+    --bg: #14161d; --panel: #1d2129; --panel-2: #262b35; --line: #333a47;
+    --fg: #eef1f6; --muted: #9aa4b4; --accent: #6ea8fe;
+    --ok: #4ec9a0; --bad: #f0736f; --warn: #e0b184;
+    --tile: #2f3644; --tile-sel: #3d5a8a;
+    --env: #7fb3d5; --action: #c9a0dc; --thought: #e0b184; --speech: #9fe0b8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: ui-rounded, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100dvh; display: flex; flex-direction: column;
+  }
+  /* 对话模式：把 body 高度锁死在视口，滚轮才会落在对话区内部而不是整页。
+     只设 min-height 的话，内容一高 body 就跟着长，内层容器永远撑到内容高度，
+     overflow-y: auto 就形同虚设。拼单词模式仍走整页滚动，所以用类名限定作用域。 */
+  body.chat-mode { height: 100dvh; overflow: hidden; }
+  header {
+    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    font-size: 13px; color: var(--muted); position: sticky; top: 0;
+    background: var(--bg); z-index: 5;
+  }
+  header b { color: var(--fg); font-weight: 800; }
+  header b.warn { color: var(--warn); }
+  header b.bad { color: var(--bad); }
+  header b.resting { color: var(--ok); }
+  header .spacer { flex: 1; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--fg); padding: 8px 12px;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0d1220; font-weight: 800; }
+  button.ghost { background: transparent; }
+
+  /* ---------- 对话模式 ---------- */
+  #view-chat { flex: 1; display: flex; min-height: 0; }
+  #session-side {
+    width: 232px; flex: none; border-right: 1px solid var(--line);
+    background: #171a21; overflow-y: auto; overscroll-behavior: contain;
+  }
+  #chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .side-head {
+    display: flex; align-items: center; gap: 8px; padding: 12px;
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; background: #171a21;
+  }
+  .side-title { flex: 1; font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--muted); }
+  .side-new { padding: 5px 9px; font-size: 12px; }
+  .side-empty { padding: 20px 12px; color: var(--muted); font-size: 12px; text-align: center; }
+  .side-item { display: flex; align-items: stretch; border-bottom: 1px solid #22262f; }
+  .side-item.active { background: #202634; box-shadow: inset 3px 0 0 var(--accent); }
+  .side-main {
+    flex: 1; min-width: 0; text-align: left; background: transparent; border: 0;
+    border-radius: 0; padding: 10px 6px 10px 12px;
+  }
+  .side-item-title {
+    font-size: 13px; font-weight: 700; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .side-item-meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .side-del {
+    flex: none; width: 30px; background: transparent; border: 0; border-radius: 0;
+    color: var(--muted); font-size: 15px; padding: 0;
+  }
+  .side-del:hover { color: var(--bad); }
+  .side-confirm { display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 11px; color: var(--bad); }
+  .side-confirm-yes, .side-confirm-no { padding: 4px 6px; font-size: 11px; }
+  .side-confirm-yes { border-color: var(--bad); color: var(--bad); background: transparent; }
+  #chat-thread {
+    flex: 1; overflow-y: auto; overscroll-behavior: contain;
+    width: min(100%, 780px); margin: 0 auto; padding: 18px 14px 8px;
+  }
+  .msg { margin-bottom: 18px; position: relative; }
+  .msg-del { position: absolute; top: 0; right: 0; opacity: 0; transition: opacity .15s; }
+  .msg:hover .msg-del, .msg-del:focus-within { opacity: 1; }
+  .msg.user .msg-del { right: auto; left: 0; }
+  .msg-del-btn {
+    width: 24px; height: 24px; padding: 0; font-size: 13px; line-height: 1;
+    background: var(--panel-2); color: var(--muted); border-radius: 8px;
+  }
+  .msg-del-confirm {
+    display: flex; align-items: center; gap: 4px; padding: 3px 6px;
+    background: var(--panel-2); border: 1px solid var(--bad); border-radius: 8px;
+    font-size: 11px; color: var(--bad); white-space: nowrap;
+  }
+  .msg-del-yes, .msg-del-no { padding: 2px 6px; font-size: 11px; }
+  .msg-del-yes { border-color: var(--bad); color: var(--bad); background: transparent; }
+  /* 窄屏：侧栏收起为抽屉，用表头按钮切换 */
+  @media (max-width: 860px) {
+    #session-side { position: absolute; z-index: 8; height: 100%; transform: translateX(-100%); transition: transform .2s; }
+    #view-chat.side-open #session-side { transform: none; box-shadow: 12px 0 32px rgba(0,0,0,.5); }
+    #view-chat { position: relative; overflow: hidden; }
+  }
+  .msg-who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .msg.user { text-align: right; }
+  .msg.user .msg-who { text-align: right; }
+  .msg-body { display: inline-block; text-align: left; max-width: 100%; }
+  .msg.assistant .msg-body {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 14px;
+  }
+  .msg.user .msg-body {
+    background: #2b3a52; border: 1px solid #35496a;
+    border-radius: 14px; padding: 10px 13px;
+  }
+  .msg-body .para { margin: 0 0 10px; line-height: 1.9; font-size: 15px; white-space: pre-wrap; }
+  .msg-body .para:last-child { margin-bottom: 0; }
+  .seg-env { color: var(--env); }
+  .seg-action { color: var(--action); }
+  .seg-thought { color: var(--thought); }
+  .seg-speech { color: var(--speech); }
+  .qcard {
+    margin: 12px 0; border: 1px solid var(--accent); border-left-width: 4px;
+    border-radius: 12px; background: #1b2431; padding: 12px 14px;
+  }
+  .qcard-label { font-size: 11px; letter-spacing: .1em; color: var(--accent); font-weight: 800; margin-bottom: 8px; }
+  .qcard-line { font-size: 15px; line-height: 1.8; }
+  .msg-usage {
+    margin-top: 5px; font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums; letter-spacing: .02em;
+  }
+  .msg.user .msg-usage { text-align: right; }
+  .usage-absent { text-align: center; color: var(--muted); font-size: 12px; padding: 10px 0; }
+  .regen-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    margin: 4px 0 14px; padding: 10px 12px;
+    border: 1px dashed var(--warn); border-radius: 12px;
+    background: #2a2418;
+  }
+  .regen-text { flex: 1; min-width: 200px; color: var(--warn); font-size: 12px; line-height: 1.6; }
+  .regen-btn {
+    border-color: var(--warn); color: var(--warn);
+    background: transparent; font-weight: 800;
+  }
+  .chat-empty { color: var(--muted); text-align: center; padding: 40px 10px; line-height: 1.9; }
+  .chat-empty .muted { font-size: 13px; }
+  .thinking-dot { color: var(--muted); }
+  #chat-composer {
+    border-top: 1px solid var(--line); background: var(--panel);
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+  .composer-inner { width: min(100%, 780px); margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
+  #chat-input {
+    flex: 1; min-height: 46px; max-height: 160px; resize: vertical;
+    padding: 12px 13px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--fg); font: inherit; line-height: 1.6;
+  }
+  #btn-chat-send { min-height: 46px; padding: 0 20px; }
+  /* 对话区背景：整场一张底图。cover 铺满、不变形、不重复；位置靠上，
+     因为底图是竖幅全身像，靠上才留得住脸。
+     图上压两层：先按比例压暗，再叠一层从上到下加深的渐变。
+     底图很亮，不做这两层，12px 的灰色小字（发言人、空状态提示）就糊在图里；
+     正文不受影响——消息气泡本身就是不透明面板，与底图亮暗无关。 */
+  #chat-main { position: relative; }
+  #chat-main::before {
+    content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image: var(--chat-bg, none);
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+    opacity: .62;
+  }
+  #chat-main::after {
+    content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background: linear-gradient(180deg, rgba(20,22,29,.60), rgba(20,22,29,.72) 45%, rgba(20,22,29,.88));
+  }
+  #chat-thread, #chat-composer { position: relative; z-index: 1; }
+  /* 发言人名直接压在底图上，而底图某些区域（比如裙子的白色）非常亮。
+     只靠投影在 12px 小字上不够用——给一层半透明底，文字就与底图亮暗无关了。 */
+  .msg-who {
+    display: inline-block; padding: 1px 8px; border-radius: 999px;
+    background: rgba(16,18,24,.62);
+    text-shadow: 0 1px 4px rgba(0,0,0,.95);
+  }
+  .chat-empty { text-shadow: 0 1px 4px rgba(0,0,0,.95), 0 0 14px rgba(0,0,0,.7); }
+  /* 表情包：贴在角色气泡里，随宽度等比缩放，绝不撑破气泡。
+     写法上只定宽、高度 auto——替换元素在 max-width 生效时会按比例回算高度；
+     反过来「定高 + 百分比 max-width」会把方形图压成非等比，contain 再补出透明边。 */
+  .face-sticker {
+    display: block; margin-top: 10px;
+    width: 132px; height: auto; max-width: 100%;
+    border-radius: 12px;
+    background: rgba(0,0,0,.18);
+  }
+  .face-sticker-note { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+  @media (max-width: 860px) {
+    .face-sticker { width: 104px; }
+  }
+
+  /* ---------- 拼单词模式（保留） ---------- */
+  main { flex: 1; width: min(100%, 1180px); margin: 0 auto; padding: 14px 14px 28px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .panes { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
+  @media (min-width: 900px) { .panes { grid-template-columns: 1fr 1fr; } }
+  .pane { display: flex; flex-direction: column; min-height: 0; }
+  .pane > h2 { margin: 0 0 10px; font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+  .pane-body { flex: 1; min-height: 0; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tag { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+  .tag.hot { background: #3a2f22; color: var(--warn); }
+  .scene { font-size: 15px; line-height: 1.95; white-space: pre-wrap; text-align: justify; }
+  .objective { margin-top: 12px; font-weight: 800; color: var(--accent); }
+  .objective span { color: var(--muted); font-weight: 500; font-size: 13px; }
+  .narrative { font-size: 15px; line-height: 1.95; white-space: pre-wrap; text-align: justify; }
+  .placeholder { color: var(--muted); font-size: 14px; line-height: 1.8; }
+  .verdict-title { font-size: 15px; font-weight: 800; margin-bottom: 8px; }
+  .verdict-pane.ok .verdict-title { color: var(--ok); }
+  .verdict-pane.bad .verdict-title { color: var(--bad); }
+  .feedback { margin: 10px 0 4px; font-weight: 700; font-size: 14px; }
+  .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0; line-height: 1.7; }
+  .verdict-pane.ok > h2 { color: var(--ok); }
+  .verdict-pane.bad > h2 { color: var(--bad); }
+  .verdict-pane.ok .feedback { color: var(--ok); }
+  .verdict-pane.bad .feedback { color: var(--bad); }
+  .wordline {
+    min-height: 52px; display: flex; align-items: center; gap: 6px;
+    padding: 10px 12px; margin-bottom: 12px; background: var(--panel-2);
+    border: 1px dashed var(--line); border-radius: 12px;
+    font-size: 26px; letter-spacing: 4px; font-weight: 800;
+  }
+  .wordline.empty { color: var(--muted); font-size: 14px; letter-spacing: 1px; font-weight: 500; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .tile {
+    width: 46px; height: 52px; font-size: 22px; font-weight: 800;
+    display: grid; place-items: center; background: var(--tile);
+    border: 1px solid var(--line); border-radius: 10px; text-transform: lowercase;
+  }
+  .tile.sel { background: var(--tile-sel); border-color: var(--accent); opacity: .55; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .hidden { display: none !important; }
+  #gameover { border-color: var(--bad); }
+  #gameover h2 { margin: 0 0 8px; color: var(--bad); font-size: 17px; }
+
+  /* ---------- 提示与弹窗 ---------- */
+  #toast, #chat-toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    background: #2b3340; border: 1px solid var(--line); color: var(--fg);
+    padding: 10px 16px; border-radius: 12px; font-size: 13px; max-width: 92vw;
+    z-index: 20; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  #chat-toast { bottom: 92px; }
+  #toast.err, #chat-toast.err { border-color: var(--bad); color: #ffd9d7; }
+  dialog {
+    border: 1px solid var(--line); border-radius: 16px; background: var(--panel);
+    color: var(--fg); width: min(94vw, 520px); padding: 18px;
+  }
+  dialog::backdrop { background: rgba(8,10,16,.72); }
+  dialog h2 { margin: 0 0 4px; font-size: 17px; }
+  dialog p.hint { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 9px 11px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--fg); font: inherit;
+  }
+  table.stats { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.stats th, table.stats td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+  table.stats th:first-child, table.stats td:first-child { text-align: left; }
+  table.stats th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  table.stats tr.active td { color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+  <header>
+    <span id="hud-chat-group">
+      模式 <b id="hud-chat-mode">对话</b>
+      　角色回复 <b id="hud-chat-turns">0</b>
+      　距下题 <b id="hud-chat-until">3</b>
+      　<b id="hud-chat-rest">本周期已出 0/10 题</b>
+      　累计 token <b id="hud-chat-tokens">—</b>
+    </span>
+    <span id="hud-wordblade-group" class="hidden">
+      场景 <b id="hud-scene">1</b>
+      　输出轮数 <b id="hud-turns">0</b>
+      　通过挑战 <b id="hud-passed">0</b>
+      　失败 <b id="hud-fail">0</b>
+      　万能词 <b id="hud-wildcard">0</b>
+      　<span id="hud-difficulty">普通</span>
+      　<span id="hud-tier">基础</span>
+    </span>
+    <span class="spacer"></span>
+    <button id="btn-side" class="ghost hidden">对话列表</button>
+    <button id="btn-profile" class="ghost">档案</button>
+    <button id="btn-stats" class="ghost">统计</button>
+    <button id="btn-settings" class="ghost">设置</button>
+  </header>
+
+  <!-- ============ 对话模式 ============ -->
+  <section id="view-chat">
+    <aside id="session-side"><div id="session-list"></div></aside>
+    <div id="chat-main">
+      <div id="chat-thread"></div>
+      <div id="chat-composer">
+        <div class="composer-inner">
+          <textarea id="chat-input" rows="1" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+          <button id="btn-chat-send" class="primary">发送</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 拼单词模式（保留，可在设置里切回） ============ -->
+  <main id="view-wordblade" class="hidden">
+    <section class="panes">
+      <article class="card pane scene-pane">
+        <h2>挑战场景</h2>
+        <div class="pane-body">
+          <div class="tags">
+            <span class="tag" id="tag-mode">应对</span>
+            <span class="tag" id="tag-shell">日常</span>
+            <span class="tag hot hidden" id="tag-meme"></span>
+          </div>
+          <div class="scene" id="scene-text">正在抽词与出题…</div>
+          <div class="objective hidden" id="scene-objective">
+            <span>挑战目标：</span><em id="objective-text"></em>
+          </div>
+        </div>
+      </article>
+
+      <article class="card pane verdict-pane" id="verdict-card">
+        <h2>应对叙事</h2>
+        <div class="pane-body">
+          <div class="verdict-title hidden" id="verdict-title"></div>
+          <div class="narrative placeholder" id="verdict-narrative">你的应对会接着挑战场景写在这里。</div>
+          <p class="feedback hidden" id="verdict-feedback"></p>
+          <p class="meta" id="verdict-detail"></p>
+        </div>
+      </article>
+    </section>
+
+    <section class="card hidden" id="gameover">
+      <h2>本局结束</h2>
+      <p class="meta" id="gameover-text"></p>
+      <div class="actions" style="margin-top:12px">
+        <button id="btn-restart" class="primary">重新开始</button>
+        <button id="btn-stats-2" class="ghost">查看统计</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="wordline empty" id="wordline">点击下方字母拼出一个单词</div>
+      <div class="tiles" id="tiles"></div>
+      <div class="actions">
+        <button id="btn-undo">撤销</button>
+        <button id="btn-clear">清空</button>
+        <button id="btn-dice">骰子 · 重抽</button>
+        <button id="btn-wildcard">万能词</button>
+        <button id="btn-submit" class="primary">确定</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="hidden"></div>
+  <div id="chat-toast" class="hidden"></div>
+
+  <!-- ============ user 档案 ============ -->
+  <dialog id="profile-dialog">
+    <h2>先认识一下</h2>
+    <p class="hint">这是给鲸鱼娘看的档案。她会按你希望的方式称呼你。</p>
+    <div class="field">
+      <label for="pf-name">你希望鲸鱼娘如何称呼你</label>
+      <input id="pf-name" placeholder="比如：阿澈" maxlength="20" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="pf-gender">性别</label>
+      <select id="pf-gender">
+        <option value="男">男</option>
+        <option value="女">女</option>
+        <option value="自定义">自定义</option>
+      </select>
+    </div>
+    <div class="field hidden" id="pf-custom-wrap">
+      <label for="pf-custom">自定义性别</label>
+      <input id="pf-custom" placeholder="写你希望的叫法" maxlength="20" autocomplete="off" />
+    </div>
+    <p class="hint" id="pf-error"></p>
+    <div class="actions">
+      <button id="btn-pf-save" class="primary">开始对话</button>
+    </div>
+  </dialog>
+
+  <!-- ============ 设置 ============ -->
+  <dialog id="settings">
+    <h2>设置</h2>
+    <p class="hint">自带 Key 直连 OpenAI 兼容端点。Key 只存在你自己的浏览器里，导出存档时不会包含。</p>
+
+    <div class="field">
+      <label for="set-mode">玩法模式</label>
+      <select id="set-mode">
+        <option value="chat">对话模式（默认）· 与鲸鱼娘自由对话，按节奏出题</option>
+        <option value="wordblade">拼单词模式（已遗弃的可选玩法）· 抽字母拼词闯关</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="set-everyn">每几条角色回复出一次题（对话模式）</label>
+      <input id="set-everyn" type="number" min="1" max="20" step="1" />
+    </div>
+    <div class="field">
+      <label for="set-qdiff">出题难度（对话模式）</label>
+      <select id="set-qdiff">
+        <option value="all">全部</option>
+        <option value="basic">基础</option>
+        <option value="advanced">进阶</option>
+      </select>
+    </div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="set-rest-enable" style="width:auto" />
+        <span>启用休息期（出满一定题数后，连续若干轮只聊天不出题）</span>
+      </label>
+    </div>
+    <div class="field">
+      <label for="set-qbefore">每出多少题进入休息期</label>
+      <input id="set-qbefore" type="number" min="1" max="100" step="1" />
+    </div>
+    <div class="field">
+      <label for="set-restturns">休息期持续多少轮对话</label>
+      <input id="set-restturns" type="number" min="1" max="100" step="1" />
+    </div>
+    <div class="field">
+      <label for="set-facehost">表情图床（两个图床是同一批图，只换取图地址）</label>
+      <select id="set-facehost"></select>
+    </div>
+    <p class="hint" id="facehost-note"></p>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0" />
+
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="set-limits-enable" style="width:auto" />
+        <span>启用上下文与渲染限额（长对话不再无脑全量发送）</span>
+      </label>
+    </div>
+    <div class="field">
+      <label for="set-renderlimit">界面渲染消息数（只影响显示）</label>
+      <input id="set-renderlimit" type="number" min="10" max="2000" step="10" />
+    </div>
+    <div class="field">
+      <label for="set-historylimit">发送的历史消息上限（条）</label>
+      <input id="set-historylimit" type="number" min="2" max="500" step="2" />
+    </div>
+    <div class="field">
+      <label for="set-maxcontext">最大上下文（token，估算）</label>
+      <input id="set-maxcontext" type="number" min="1000" max="1000000" step="1000" />
+    </div>
+    <p class="hint" id="limits-note"></p>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0" />
+
+    <div class="field">
+      <label for="preset">接口预设</label>
+      <select id="preset"></select>
+    </div>
+    <div class="field">
+      <label for="endpoint">接口地址（填 base URL 或完整路径都行）</label>
+      <input id="endpoint" placeholder="https://api.deepseek.com/v1" />
+    </div>
+    <p class="hint" id="endpoint-note"></p>
+    <div class="field">
+      <label for="model">模型名</label>
+      <input id="model" placeholder="deepseek-chat" />
+    </div>
+    <div class="field">
+      <label for="apiKey">API Key（本地端点可留空）</label>
+      <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="tier">词汇档位（仅拼单词模式）</label>
+      <select id="tier">
+        <option value="基础">基础 · 四级核心词汇</option>
+        <option value="进阶">进阶 · 高级词汇</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="difficulty">游戏难度（仅拼单词模式）</label>
+      <select id="difficulty"></select>
+    </div>
+    <p class="hint" id="difficulty-note"></p>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="usePrefill" style="width:auto" />
+        <span>使用预填充（把模型锁进既定输出结构；端点不支持会自动降级）</span>
+      </label>
+    </div>
+    <div class="actions">
+      <button id="btn-test" class="ghost">测试连接</button>
+      <button id="btn-save-settings" class="primary">保存</button>
+      <button id="btn-clear-save" class="ghost">清空存档重开</button>
+    </div>
+    <p class="hint" id="test-result"></p>
+  </dialog>
+
+  <!-- ============ 统计 ============ -->
+  <dialog id="stats-dialog">
+    <h2>统计</h2>
+    <p class="hint" id="bank-info"></p>
+    <p class="hint" id="question-bank-info"></p>
+    <p class="hint">「最高通过」是该难度下单局最高的通过挑战数；「累计通过」含正在进行的这一局。</p>
+    <table class="stats" id="stats-table"></table>
+    <div class="actions" style="margin-top:14px">
+      <button id="btn-close-stats" class="primary">关闭</button>
+      <button id="btn-reset-stats" class="ghost">清空统计</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
