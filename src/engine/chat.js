@@ -1,18 +1,19 @@
 // 对话模式的会话与消息状态。纯逻辑，不得 import 浏览器 API。
-//
-// 一期范围：单会话、平铺消息列表、无删除、无分支。
-// 消息里保留了 parentId 字段（一期恒为 null），三期做分支时无需迁移存档。
 
-import { findQuestion, renderQuestionBody, composeOutgoing, DEFAULT_EVERY_N, DEFAULT_REST } from './questions.js';
+import { findQuestion, renderQuestionBody, DEFAULT_EVERY_N, DEFAULT_REST } from './questions.js';
 import { DEFAULT_LIMITS } from './limits.js';
+import { serializeSession, snapshotInjection } from './prompt.js';
+import { normalizeUsageShape, cacheHitRate } from './usage.js';
+import { normalizeSummaryMessage, parseTurnSummary } from './summary.js';
 
-export const CHAT_SAVE_VERSION = 1;
+export const CHAT_SAVE_VERSION = 2;
 export const GENDERS = ['男', '女', '自定义'];
 
 let idSeq = 0;
 function nextId(prefix) {
   idSeq += 1;
-  return `${prefix}_${Date.now().toString(36)}_${idSeq.toString(36)}`;
+  const nonce = globalThis.crypto?.randomUUID?.() || `${Math.random().toString(36).slice(2)}_${idSeq.toString(36)}`;
+  return `${prefix}_${Date.now().toString(36)}_${nonce}`;
 }
 
 /** 仅供测试：重置 id 计数器。 */
@@ -54,6 +55,7 @@ export function createSession({
   difficulty = 'all',
   restConfig = DEFAULT_REST,
   limits = DEFAULT_LIMITS,
+  debugSummaries = false,
   title = '新的对话',
 } = {}) {
   return {
@@ -67,7 +69,10 @@ export function createSession({
     difficulty,
     restConfig: { ...DEFAULT_REST, ...(restConfig || {}) },
     limits: { ...DEFAULT_LIMITS, ...(limits || {}) },
-    trimCursor: 0,          // 历史窗口起点，由滞后裁剪推进
+    trimCursor: 0,
+    debugSummaries: debugSummaries === true,
+    questionContext: null,
+    compaction: { version: 1, epoch: 0, totalTurns: 0 },
     questionsSinceRest: 0,
     restTurnsLeft: 0,
     messages: [],
@@ -85,7 +90,7 @@ export function assistantReplyCount(session) {
   return messages(session).filter((m) => m.role === 'assistant').length;
 }
 
-/** 追加一条消息。parentId 一律取当前末尾；一期不做分支。 */
+/** 追加一条消息，parentId 取当前末尾。 */
 export function appendMessage(session, { role, text, questionId = null, usage = null }) {
   const last = session.messages[session.messages.length - 1] || null;
   const msg = {
@@ -93,7 +98,10 @@ export function appendMessage(session, { role, text, questionId = null, usage = 
     parentId: last ? last.id : null,
     role,
     text: String(text ?? ''),
+    compacted: false,
+    ...(role === 'assistant' ? parseTurnSummary(text) : {}),
     questionId: questionId || null,
+    ...(role === 'user' ? { promptInjection: snapshotInjection({ questionId }) } : {}),
     at: Date.now(),
     // 这一轮请求的 token 用量。角色回复记全量；用户消息只留输入侧，
     // 便于气泡下方直接显示本轮成本。端点没返回用量时为 null。
@@ -106,17 +114,6 @@ export function appendMessage(session, { role, text, questionId = null, usage = 
   };
 }
 
-function normalizeUsageShape(usage) {
-  if (!usage || typeof usage !== 'object') return null;
-  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
-  const prompt = num(usage.prompt);
-  const completion = num(usage.completion);
-  const total = num(usage.total) ?? (prompt !== null && completion !== null ? prompt + completion : null);
-  const cached = num(usage.cached);
-  if (prompt === null && completion === null && total === null && cached === null) return null;
-  return { prompt, completion, total, cached };
-}
-
 /** 会话累计用量。只统计留有用量的消息，缺用量的轮次不计入。 */
 export function totalUsage(session) {
   let prompt = 0;
@@ -125,13 +122,17 @@ export function totalUsage(session) {
   let reportedPrompt = 0;
   let counted = 0;
   let cacheReports = 0;
+  let total = 0;
   for (const m of messages(session)) {
-    if (m.role !== 'assistant' || !m.usage) continue;
-    if (m.usage.prompt !== null) prompt += m.usage.prompt;
-    if (m.usage.completion !== null) completion += m.usage.completion;
-    if (m.usage.cached !== null && m.usage.cached !== undefined) {
-      cached += m.usage.cached;
-      reportedPrompt += m.usage.prompt || 0;
+    const usage = normalizeUsageShape(m.usage);
+    if (m.role !== 'assistant' || !usage) continue;
+    if (usage.prompt === null && usage.completion === null && usage.total === null) continue;
+    prompt += usage.prompt ?? 0;
+    completion += usage.completion ?? 0;
+    total += usage.total ?? ((usage.prompt ?? 0) + (usage.completion ?? 0));
+    if (cacheHitRate(usage) !== null) {
+      cached += usage.cached;
+      reportedPrompt += usage.prompt;
       cacheReports += 1;
     }
     counted += 1;
@@ -140,7 +141,7 @@ export function totalUsage(session) {
     prompt,
     completion,
     cached,
-    total: prompt + completion,
+    total,
     turns: counted,
     // 分母只用「报过缓存字段的轮次」的输入量：
     // 端点漏报缓存不等于未命中，拿它当分母会把命中率压低。
@@ -163,21 +164,18 @@ export function deriveTitle(session) {
   return t || session.title;
 }
 
-/**
- * 删除一条消息。
- * 一期消息是平铺的（parentId 恒为 null），所以删掉它不影响其他消息。
- * 三期做分支后，这里要把它的子节点接到被删节点的父节点上——
- * 注释先留着，免得那时忘了还有这一层。
- * 顺带把历史窗口游标往回收，避免它指到已不存在的下标。
- */
+/** 删除一条消息。 */
 export function deleteMessage(session, id) {
   const list = messages(session);
-  if (!list.some((m) => m.id === id)) return session;
+  const index = list.findIndex((m) => m.id === id);
+  if (index < 0) return session;
   const next = list.filter((m) => m.id !== id);
+  const cursor = Math.max(0, (session.trimCursor || 0) - (index < (session.trimCursor || 0) ? 1 : 0));
   return {
     ...session,
     messages: next,
-    trimCursor: Math.min(session.trimCursor || 0, next.length),
+    questionContext: session.questionContext?.sourceMessageId === id ? null : session.questionContext,
+    trimCursor: Math.min(cursor, next.length),
     updatedAt: Date.now(),
   };
 }
@@ -190,6 +188,7 @@ export function deleteFrom(session, index) {
   return {
     ...session,
     messages: next,
+    questionContext: next.some((message) => message.id === session.questionContext?.sourceMessageId) ? session.questionContext : null,
     trimCursor: Math.min(session.trimCursor || 0, next.length),
     updatedAt: Date.now(),
   };
@@ -212,42 +211,9 @@ export function summarizeSession(session) {
 
 /* ---------------- 请求组装 ---------------- */
 
-/**
- * 组装发给模型的 messages。
- * 关键点：
- *   1. 用户消息在存档里只存原文，但发给模型时必须把当时那道题重新拼回去，
- *      否则模型会丢失「这一轮我出过什么题」的上下文。
- *   2. cursor 之前的历史按限额裁掉；被裁过就在窗口开头放一条省略说明，
- *      让模型知道自己缺了前文，而不是以为对话刚开头。
- *
- * @param {object} session
- * @param {string} systemPrompt
- * @param {{cursor?: number}} opts
- */
-export function buildChatMessages(session, systemPrompt, { cursor = 0 } = {}) {
-  const all = messages(session);
-  const start = Math.min(Math.max(0, cursor), all.length);
-  const out = [{ role: 'system', content: systemPrompt }];
-
-  if (start > 0) {
-    out.push({ role: 'user', content: '（更早的对话已省略，以下是最近的部分）' });
-  }
-
-  for (let i = start; i < all.length; i += 1) {
-    const m = all[i];
-    if (m.role !== 'user') {
-      // 角色输出原样入上下文；防御性剥掉可能被回显的答案标签
-      out.push({ role: 'assistant', content: stripAnswerKey(m.text) });
-      continue;
-    }
-    const q = m.questionId ? findQuestion(m.questionId) : null;
-    out.push({ role: 'user', content: q ? composeOutgoing({ userText: m.text, question: q }) : m.text });
-  }
-  return out;
-}
-
-function stripAnswerKey(text) {
-  return String(text ?? '').replace(/<AnswerKey>[\s\S]*?<\/AnswerKey>/g, '').trim();
+/** 组装发给模型的 messages。 */
+export function buildChatMessages(session, systemPrompt) {
+  return serializeSession(session, systemPrompt);
 }
 
 /* ---------------- 存档往返 ---------------- */
@@ -257,7 +223,7 @@ export function toSaveable(session) {
 }
 
 export function fromSaveable(obj) {
-  if (!obj || obj.version !== CHAT_SAVE_VERSION) return null;
+  if (!obj || ![1, CHAT_SAVE_VERSION].includes(obj.version)) return null;
   const base = createSession({
     profile: obj.profile,
     everyN: obj.everyN,
@@ -268,15 +234,28 @@ export function fromSaveable(obj) {
   return {
     ...base,
     ...obj,
+    version: CHAT_SAVE_VERSION,
     profile: normalizeProfile(obj.profile),
     everyN: Number(obj.everyN) || DEFAULT_EVERY_N,
     difficulty: obj.difficulty || 'all',
     restConfig: { ...DEFAULT_REST, ...(obj.restConfig || {}) },
     limits: { ...DEFAULT_LIMITS, ...(obj.limits || {}) },
-    trimCursor: Number(obj.trimCursor) || 0,
+    trimCursor: 0,
+    debugSummaries: obj.debugSummaries === true,
+    questionContext: obj.questionContext && typeof obj.questionContext === 'object' ? {
+      sourceMessageId: String(obj.questionContext.sourceMessageId || ''),
+      questionId: obj.questionContext.questionId || null,
+      promptInjection: String(obj.questionContext.promptInjection || ''),
+    } : null,
     questionsSinceRest: Number(obj.questionsSinceRest) || 0,
     restTurnsLeft: Number(obj.restTurnsLeft) || 0,
-    messages: Array.isArray(obj.messages) ? obj.messages : [],
+    messages: Array.isArray(obj.messages) ? obj.messages.filter((m) => m && ['user', 'assistant'].includes(m.role)).map((m) => normalizeSummaryMessage({
+      ...m,
+      text: m.compacted === true ? '' : String(m.text ?? ''),
+      compacted: m.compacted === true,
+      usage: normalizeUsageShape(m.usage),
+      ...(m.role === 'user' ? { promptInjection: snapshotInjection(m) } : {}),
+    })) : [],
     usedQuestionIds: Array.isArray(obj.usedQuestionIds) ? obj.usedQuestionIds : [],
   };
 }

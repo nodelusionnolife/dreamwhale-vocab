@@ -11,7 +11,7 @@
 export const DEFAULT_LIMITS = {
   enabled: true,
   renderLimit: 120,        // 界面最多渲染多少条消息（纯显示，不影响发送）
-  historyLimit: 60,        // 发送给模型的历史消息条数上限
+  historyLimit: 60,        // 保留正文的消息条数目标；仅完整且有小总结的回合可裁剪
   maxContextTokens: 32000, // 上下文 token 预算（估算）
   trimRatio: 0.7,          // 触发裁剪后保留到预算的这个比例
 };
@@ -68,7 +68,7 @@ export function systemTokensFor({ systemText, lastRealPromptTokens = null, lastH
 export function estimateFrom(messages, fromIndex) {
   let sum = 0;
   for (let i = Math.max(0, fromIndex); i < messages.length; i += 1) {
-    sum += estimateTokens(messages[i]?.text || '');
+    sum += estimateTokens(messages[i]?.content ?? messages[i]?.text ?? '');
   }
   return sum;
 }
@@ -84,42 +84,39 @@ export function estimateFrom(messages, fromIndex) {
  * @param {object} opts.limits
  * @returns {{cursor:number, trimmed:boolean, droppedCount:number, estimatedTokens:number}}
  */
-export function nextTrimCursor({ messages, systemTokens = 0, cursor = 0, limits = DEFAULT_LIMITS }) {
+export function nextTrimCursor({ messages, systemTokens = 0, cursor = 0, limits = DEFAULT_LIMITS, inputBudget = null }) {
   const lim = clampLimits(limits);
   const total = messages.length;
-  let start = Math.min(Math.max(0, cursor), total);
+  const previous = Number.isFinite(cursor) ? Math.trunc(cursor) : 0;
+  let start = lim.enabled ? Math.min(Math.max(0, previous), Math.max(0, total - 1)) : 0;
+  const maximum = inputBudget === null ? lim.maxContextTokens : Math.max(1, inputBudget);
+  const countExceeded = total - start > lim.historyLimit;
+  const tokensExceeded = systemTokens + estimateFrom(messages, start) > maximum;
 
-  // 条数上限：无论 token 如何，历史消息条数不超过 historyLimit
-  const byCount = Math.max(0, total - lim.historyLimit);
-  start = Math.max(start, byCount);
-
-  const used = systemTokens + estimateFrom(messages, start);
-  if (!lim.enabled || used <= lim.maxContextTokens) {
-    // 没超预算就不动窗口——保持前缀稳定，缓存才有效
-    return {
-      cursor: start,
-      trimmed: start > 0,
-      droppedCount: start,
-      estimatedTokens: used,
-    };
+  if (lim.enabled && (countExceeded || tokensExceeded)) {
+    const targetCount = countExceeded ? Math.max(1, Math.floor(lim.historyLimit * lim.trimRatio)) : lim.historyLimit;
+    const targetTokens = tokensExceeded ? Math.floor(maximum * lim.trimRatio) : maximum;
+    let acc = systemTokens;
+    let i = total;
+    while (i > start && total - i < targetCount) {
+      const cost = estimateTokens(messages[i - 1]?.content ?? messages[i - 1]?.text ?? '');
+      if (acc + cost > targetTokens) break;
+      acc += cost;
+      i -= 1;
+    }
+    start = Math.min(i, Math.max(0, total - 1));
   }
-
-  // 超预算了：从尾部往前装，装到目标预算为止，起点落在哪里就从哪里开始
-  const budget = Math.max(1, Math.floor(lim.maxContextTokens * lim.trimRatio));
-  let acc = systemTokens;
-  let i = total;
-  while (i > start && acc + estimateTokens(messages[i - 1]?.text || '') <= budget) {
-    acc += estimateTokens(messages[i - 1]?.text || '');
-    i -= 1;
+  if (lim.enabled) {
+    while (start < total - 1 && messages[start]?.role === 'assistant') start += 1;
   }
-  // 至少保留最后一条（当前这轮用户消息），否则模型没东西可回
-  if (i >= total) i = Math.max(0, total - 1);
-
+  const estimatedTokens = systemTokens + estimateFrom(messages, start);
   return {
-    cursor: i,
-    trimmed: i > 0,
-    droppedCount: i,
-    estimatedTokens: systemTokens + estimateFrom(messages, i),
+    cursor: start,
+    trimmed: start > 0,
+    advanced: start > previous,
+    droppedCount: start,
+    estimatedTokens,
+    overBudget: lim.enabled && estimatedTokens > maximum,
   };
 }
 

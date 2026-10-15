@@ -9,7 +9,7 @@
 // 只认一种写法就会出现「图有、标签也对、却解析不到」的假故障。
 
 import {
-  EMOTIONS, EMOTION_IDS, FACE_TAG, faceUrlFor, DEFAULT_FACE_HOST,
+  EMOTIONS, EMOTION_IDS, FACE_TAG, faceUrlFor, DEFAULT_FACE_STYLE,
 } from '../content/emotions.js';
 import { resolveAsset, sourceFor } from './assets.js';
 
@@ -74,17 +74,18 @@ export function lastFace(text) {
 }
 
 /**
- * 标签 → 立绘资产 + 实际要用的图床地址。
+ * 标签 → 立绘资产 + 当前风格的图片地址。
  * 认不出的标签不会硬给一张图，而是落回 sprite 类的默认项；
  * 没有默认项就返回 null（立绘区留空），绝不给坏图。
  *
  * @param {object} manifest
  * @param {string} raw 模型写的标签（标准或别名都行）
- * @param {{host?:string}} opts host 指定图床；缺省用默认图床
+ * @param {{style?:string,host?:string}} opts
  * @returns {{asset:object|null, src:object|null, emotion:string|null, via:string|null, reason:string}}
  */
-export function resolveFace(manifest, raw, { host = DEFAULT_FACE_HOST } = {}) {
-  const pick = (asset) => (asset ? { asset, src: sourceFor(asset, host) } : { asset: null, src: null });
+export function resolveFace(manifest, raw, { style, host } = {}) {
+  const selectedStyle = style ?? host ?? DEFAULT_FACE_STYLE;
+  const pick = (asset) => (asset ? { asset, src: sourceFor(asset, selectedStyle) } : { asset: null, src: null });
 
   const canonical = normalizeEmotion(raw);
   if (!canonical) {

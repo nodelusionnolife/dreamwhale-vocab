@@ -2,10 +2,11 @@
 //
 // 角色回复的呈现顺序会被保留：叙述片段按四类标记套样式，<Question> 块在原位渲染成题卡。
 
-import { parseMarkers, extractQuestion } from '../engine/markers.js';
+import { parseMarkers } from '../engine/markers.js';
 import { renderWindow } from '../engine/limits.js';
 import { stripFaceTags } from '../engine/emotions.js';
 import { stripStickerTags } from '../engine/assets.js';
+import { stripTurnSummary } from '../engine/summary.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -60,30 +61,56 @@ function renderQuestionCard(questionText) {
   return card;
 }
 
-/**
- * 表情包：贴在角色消息里，随气泡宽度缩放，绝不撑破气泡。
- * 只由 main.js 传进来的解析结果决定地址，渲染层不认识图床——
- * 换图床要重渲染整条消息，本来也不该让渲染层知道该用哪个图床。
- */
 function faceSticker(face) {
   const img = el('img', 'face-sticker');
-  img.alt = face.emotion || '表情';
+  img.alt = `梦鲸 · ${face.emotion || '表情'}`;
   img.decoding = 'async';
   img.loading = 'lazy';
-  img.referrerPolicy = 'no-referrer'; // 图床多半按 referer 拦外链
+  img.referrerPolicy = 'no-referrer';
   img.addEventListener('error', () => {
-    // 图取不到时不留一块空白：把图换成一句人话，并提示可以去设置里换图床
-    const note = el('p', 'face-sticker-note', '（这张表情没加载出来，可在设置里换另一个图床）');
+    const note = el('p', 'face-sticker-note', '表情图片未能加载，请刷新后重试。');
     img.replaceWith(note);
   });
   img.src = face.src.path;
   return img;
 }
 
-/** 渲染一条角色回复：按顺序混排叙述与题卡，有表情就附在末尾。 */
-function renderAssistant(host, rawText, face = null) {
+function assistantName(avatarSrc) {
+  const who = el('div', 'msg-who assistant-name');
+  if (avatarSrc) {
+    const avatar = el('img', 'character-avatar');
+    avatar.alt = '';
+    avatar.width = 40;
+    avatar.height = 40;
+    avatar.decoding = 'async';
+    avatar.addEventListener('error', () => {
+      const fallback = el('span', 'character-avatar avatar-fallback', '梦');
+      fallback.title = '头像未能加载';
+      avatar.replaceWith(fallback);
+    });
+    avatar.src = avatarSrc;
+    who.appendChild(avatar);
+  }
+  who.appendChild(el('span', 'msg-name', '梦鲸'));
+  return who;
+}
+
+function renderExpression(host, face) {
+  if (!face?.src?.path) return;
+  const expression = el('div', 'msg-expression');
+  expression.appendChild(faceSticker(face));
+  host.appendChild(expression);
+}
+
+export function renderAppearancePreview({ hostEl, face, avatarSrc }) {
+  hostEl.replaceChildren();
+  hostEl.appendChild(assistantName(avatarSrc));
+  renderExpression(hostEl, face);
+}
+
+function renderAssistant(host, rawText) {
   // 先摘掉「给系统看的」标签，它们不该出现在气泡文字里
-  const text = stripFaceTags(stripStickerTags(String(rawText || '')))
+  const text = stripFaceTags(stripStickerTags(stripTurnSummary(rawText)))
     .replace(/<AnswerKey>[\s\S]*?<\/AnswerKey>/g, '');
   const re = /<Question>([\s\S]*?)<\/Question>/g;
   let last = 0;
@@ -95,9 +122,16 @@ function renderAssistant(host, rawText, face = null) {
   }
   if (last < text.length) renderParagraphs(host, text.slice(last));
   if (!host.childNodes.length) renderParagraphs(host, text);
-  // 表情贴在文字之后：像聊天里的贴图，而不是另开一块面板
-  if (face?.src?.path) host.appendChild(faceSticker(face));
 }
+
+function renderSummary(host, msg, debug = false) {
+  const box = el('div', debug ? 'msg-summary-debug' : 'msg-summary');
+  box.appendChild(el('div', 'msg-summary-label', '回合小总结'));
+  box.appendChild(el('div', 'msg-summary-text', msg.summary || '本轮未生成有效小总结，正文暂不能裁剪。'));
+  host.appendChild(box);
+}
+
+const threadViews = new WeakMap();
 
 const fmt = (n) => (typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString('en-US') : null);
 
@@ -157,41 +191,52 @@ function messageDeleteControl(id, onDelete) {
  */
 export function renderThread({
   hostEl, session, busy, showThinking = true, onRegenerate = null, onDeleteMessage = null,
-  faceFor = null,
+  faceFor = null, avatarSrc = '', debugSummaries = false,
 }) {
   const atBottom = hostEl.scrollHeight - hostEl.scrollTop - hostEl.clientHeight < 80;
+  let view = threadViews.get(hostEl);
+  if (!view || view.sessionId !== session?.id) {
+    view = { sessionId: session?.id, expanded: false };
+    threadViews.set(hostEl, view);
+  }
   hostEl.replaceChildren();
 
   const all = session?.messages || [];
-  // 只渲染最近 renderLimit 条；更早的在界面上折叠，不影响存档与发送
   const win = renderWindow(all, session?.limits);
-  const list = win.items;
   let sawUsage = false;
+  let usageNotice = null;
 
-  if (win.hiddenCount > 0) {
-    hostEl.appendChild(el('div', 'usage-absent', `更早的 ${win.hiddenCount} 条消息已折叠（仍保存在本地）`));
-  }
-
-  list.forEach((msg, idx) => {
+  const renderMessage = (msg, idx, target) => {
     const wrap = el('div', `msg ${msg.role === 'user' ? 'user' : 'assistant'}`);
-    const who = el('div', 'msg-who', msg.role === 'user' ? (session?.profile?.name || '你') : '鲸鱼娘');
+    const who = msg.role === 'user'
+      ? el('div', 'msg-who', session?.profile?.name || '你')
+      : assistantName(avatarSrc);
     wrap.appendChild(who);
     const body = el('div', 'msg-body');
-    if (msg.role === 'user') {
+    let face = null;
+    if (msg.compacted) {
+      if (msg.role === 'user') {
+        body.appendChild(el('div', 'msg-compacted-note', '正文已裁剪，见本轮小总结。'));
+      } else {
+        renderSummary(body, msg);
+      }
+    } else if (msg.role === 'user') {
       renderParagraphs(body, msg.text || '');
     } else {
-      // 表情由外部解析后传进来：渲染层不认识清单与图床，只负责画
-      const face = faceFor ? faceFor(msg.text) : null;
-      renderAssistant(body, msg.text, face);
+      const text = stripTurnSummary(msg.text);
+      face = faceFor ? faceFor(text) : null;
+      renderAssistant(body, text);
       // 立绘钩子：把这条回复里的表情落到 DOM 上，供外部查询
       if (face?.emotion) wrap.dataset.face = face.emotion;
     }
     wrap.appendChild(body);
+    renderExpression(wrap, face);
+    if (debugSummaries && msg.role === 'assistant' && !msg.compacted) renderSummary(wrap, msg, true);
 
     // 用量：角色回复自带全量；用户消息取「本轮」的输入侧——也就是紧随其后那条回复的 prompt
     let usage = msg.usage;
     if (msg.role === 'user') {
-      const next = list[idx + 1];
+      const next = all[idx + 1];
       usage = next && next.role === 'assistant' && next.usage
         ? { prompt: next.usage.prompt, completion: null, cached: next.usage.cached }
         : null;
@@ -199,8 +244,31 @@ export function renderThread({
     if (usage && renderUsage(wrap, usage)) sawUsage = true;
     if (onDeleteMessage) wrap.appendChild(messageDeleteControl(msg.id, onDeleteMessage));
 
-    hostEl.appendChild(wrap);
-  });
+    target.appendChild(wrap);
+  };
+
+  if (win.hiddenCount > 0) {
+    const earlier = el('details', 'thread-history');
+    earlier.appendChild(el('summary', null, `更早的 ${win.hiddenCount} 条消息`));
+    const history = el('div', 'thread-history-content');
+    earlier.appendChild(history);
+    let loaded = false;
+    const loadHistory = () => {
+      if (loaded) return;
+      for (let i = 0; i < win.startIndex; i += 1) renderMessage(all[i], i, history);
+      loaded = true;
+      if (sawUsage && usageNotice) usageNotice.remove();
+    };
+    earlier.addEventListener('toggle', () => {
+      view.expanded = earlier.open;
+      if (earlier.open) loadHistory();
+    });
+    if (view.expanded) loadHistory();
+    earlier.open = view.expanded;
+    hostEl.appendChild(earlier);
+  }
+
+  for (let i = win.startIndex; i < all.length; i += 1) renderMessage(all[i], i, hostEl);
 
   if (!all.length) {
     const empty = el('div', 'chat-empty');
@@ -211,7 +279,7 @@ export function renderThread({
 
   if (busy && showThinking) {
     const thinking = el('div', 'msg assistant thinking');
-    thinking.appendChild(el('div', 'msg-who', '鲸鱼娘'));
+    thinking.appendChild(assistantName(avatarSrc));
     thinking.appendChild(el('div', 'msg-body thinking-dot', '正在输入…'));
     hostEl.appendChild(thinking);
   }
@@ -229,7 +297,8 @@ export function renderThread({
 
   // 有对话但一条用量都没有，说明端点没返回用量——明说，别让人以为是坏了
   if (all.length >= 2 && !sawUsage) {
-    hostEl.appendChild(el('div', 'usage-absent', '当前端点未返回 token 用量，因此无法显示消耗。'));
+    usageNotice = el('div', 'usage-absent', '当前端点未返回 token 用量，因此无法显示消耗。');
+    hostEl.appendChild(usageNotice);
   }
 
   if (atBottom) hostEl.scrollTop = hostEl.scrollHeight;
@@ -325,7 +394,7 @@ export function readProfileForm({ nameEl, genderEl, customEl }) {
 }
 
 export function profileFormError({ nameEl, genderEl, customEl }) {
-  if (!nameEl.value.trim()) return '先填一个称呼吧——鲸鱼娘总得知道该叫你什么。';
+  if (!nameEl.value.trim()) return '先填一个称呼吧——梦鲸总得知道该叫你什么。';
   if (genderEl.value === '自定义' && !customEl.value.trim()) return '选了「自定义」就把性别写一下。';
   return '';
 }

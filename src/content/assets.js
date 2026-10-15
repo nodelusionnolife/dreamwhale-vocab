@@ -1,104 +1,88 @@
-// 资产清单（图片 / 表情包 / 立绘 / 背景）的唯一事实来源。
-//
-// 设计约束（对着本项目的实际情况来，不是通用模板）：
-//   1. 图片数据绝不进消息、绝不进 localStorage。消息里只存「键」。
-//      iNeed 沙箱的 localStorage 垫片约 1MB，一张 base64 图就能撑爆。
-//      所以图走文件或远端 URL，清单只负责把键映射到地址。
-//   2. 清单是代码资产，随构建发布，不随玩家存档走。
-//   3. 每条资产必须记来源与授权。本作素材为驾驶员自绘，但清单里仍逐条登记——
-//      一旦将来引入第三方素材，来源与授权是事后唯一能追溯的依据。
-//      缺授权不阻断开发，但会被校验器标为警告。
-//
-// 清单形状对齐资料库的 media-manifest-contract（sillytavern-media-live2d-runtime）：
-//   { id, kind, source:{type,path}, bytes, sha256, preload, lifetime, fallbackAssetId }
-//   另加本项目需要的 tags 与 provenance。
+import { emotionsWithArt, faceUrlFor, FACE_STYLES, DEFAULT_FACE_STYLE, CHARACTER_AVATAR_PATH } from './emotions.js';
 
-/** 三类渲染面。背景与立绘走场景 JSON 的结构化通道；表情包走正文内联标签。 */
 export const ASSET_KINDS = ['bg', 'sprite', 'sticker'];
-
-/** 预载时机。eager = 进游戏就取；lazy = 用到前一批取；on-demand = 用到才取。 */
 export const PRELOAD_POLICIES = ['eager', 'lazy', 'on-demand'];
-
-/** 生命周期。chat = 整场有效；message = 只在那条消息里有效。 */
 export const LIFETIMES = ['chat', 'message'];
-
-import { emotionsWithArt, faceUrlFor, FACE_HOSTS, DEFAULT_FACE_HOST } from './emotions.js';
-
 export const ASSET_SCHEMA_VERSION = 1;
+export const CHAT_BG_ID = 'bg-chat-room';
+export const CHARACTER_AVATAR_ID = 'mengjing-avatar';
 
-/**
- * 立绘条目从表情表派生，保证「标准标签」只有一个事实来源。
- * 补一张新立绘 = 在 emotions.js 里给那条加 hosts，这里自动跟进，提示词也自动跟进。
- *
- * 每张图登记两个图床地址：source 是默认图床，altSources 是备用。
- * 切换只换取图地址、不换图——两张是同一张立绘。
- * **图不进仓库**：这个作品本来就要联网调模型，表情本地化并不能让它离线可用。
- *
- * 注意：这里**故意不设默认立绘**。挑任何一张当默认都会让「没指定情绪」的时刻
- * 偏向那个情绪。等将来真有中性到能当底图的那张，再把它标成 isDefault: true。
- */
+const CHARACTER_PROVENANCE = {
+  origin: 'AI 生成的梦鲸角色素材',
+  license: '经项目作者授权用于梦鲸词汇项目展示与随项目分发',
+};
+
+const LOCAL_ASSET_METADATA = {
+  'assets/mengjing/chibi/angry.webp': { bytes: 78520, sha256: 'e24c31572738e255803fd7fec13a5a9b6f623e332035c57075d249ea5eca5c0d' },
+  'assets/mengjing/chibi/crying.webp': { bytes: 74690, sha256: '281d69071250519f5ee5210c3992e6c46e87dab17de3ba8c2fea875c8f1a0755' },
+  'assets/mengjing/chibi/excited.webp': { bytes: 77846, sha256: '5c3bfa8c3e8c8af1383f7c237c7b297e266ab79276b0729f9ca7b030c87f034a' },
+  'assets/mengjing/chibi/gentle.webp': { bytes: 75700, sha256: '28a130341a8799d0626fc1146355ae88b64c6eacd1fa23cbe7e20ffa96745f65' },
+  'assets/mengjing/chibi/happy.webp': { bytes: 75860, sha256: '548d7661a9833d4ff5215f596ec5d20516508b270adbf19342af571abf5315e0' },
+  'assets/mengjing/chibi/helpless.webp': { bytes: 73084, sha256: '345afd78d04d43294e4ae9080606fdfc7d408d95575cce6ed190b5ae59f16dce' },
+  'assets/mengjing/chibi/neutral.webp': { bytes: 79480, sha256: '1dd62cb9672b4af6051f9077483e81db914da1df6dbe568b98d058cafad90d8e' },
+  'assets/mengjing/chibi/proud.webp': { bytes: 78338, sha256: '698a42f65f8117617ca21e6fdc644d828ea59af3c4b85ea9eb367593eeb3ec14' },
+  'assets/mengjing/chibi/sad.webp': { bytes: 75562, sha256: '9d1bfb0762c32f6515dfbb5b3ecbf91569344408882ee5df6ec445e3628704ae' },
+  'assets/mengjing/chibi/serious.webp': { bytes: 79150, sha256: '7b65ffa90aa92689b8d7f5198b65f59f2eb285d34146f9b0f69c5eb4e125b334' },
+  'assets/mengjing/chibi/shy.webp': { bytes: 78478, sha256: 'eb812e823e035d5f4949b9b2d9b3cb2a3a3ffc2ef779cfcc941c6dcb3da06498' },
+  'assets/mengjing/chibi/sleepy.webp': { bytes: 74712, sha256: 'e9bdf0bee54bedda5d0d4aaf82d16663290fe1f2e4877fc3b806be17abb75711' },
+  'assets/mengjing/chibi/surprised.webp': { bytes: 77292, sha256: 'db007dbaca8c23979a830b6e1055ba45527644cc2fde62e65332362495fc7b72' },
+  'assets/mengjing/chibi/thinking.webp': { bytes: 74844, sha256: '23f978b6158aa2395982a34cda36088dee652895421ccf50a60d28de11f8d040' },
+  'assets/mengjing/portrait/angry.webp': { bytes: 83674, sha256: '3bfd96845d85cc07964ef8bbceb1af2d441ab51ad6fe406cf9c1adb821888b7f' },
+  'assets/mengjing/portrait/crying.webp': { bytes: 84282, sha256: 'a1442e29f1fc35bf22f5026af87742605497c7e2809c582ae7e9ddd6e6a7b620' },
+  'assets/mengjing/portrait/excited.webp': { bytes: 82932, sha256: '0e72e92200426abc45ba9141f83da6e280557cba15436602d96992ec702fb413' },
+  'assets/mengjing/portrait/gentle.webp': { bytes: 84346, sha256: '2ac2ab7f363e11a368d455cdb34dc5f78c2edf318e4dac9801171a8f36e7fe7f' },
+  'assets/mengjing/portrait/happy.webp': { bytes: 85496, sha256: '849007daf5b40b1e04ebf368486c2a8f309ef93fe6d58ec3661d59378325428b' },
+  'assets/mengjing/portrait/helpless.webp': { bytes: 81404, sha256: 'fb3a31d4ebc4fdb888a780387ff52bfb75d6e7888c4e23ffa0349c0b7a994094' },
+  'assets/mengjing/portrait/neutral.webp': { bytes: 80800, sha256: 'a11c6c2395ee5a8047a09d063f53a1dde69f6096b75cd31abe6f36cb43b048ed' },
+  'assets/mengjing/portrait/proud.webp': { bytes: 79782, sha256: '9c05da344262149e50f947a6b539589b51a124269ed79c260f3c6f7f6827bf05' },
+  'assets/mengjing/portrait/sad.webp': { bytes: 83466, sha256: '6eea32a948b5bf9576bc72e73b8347bdbadd6e09fd9989018161c112c3698512' },
+  'assets/mengjing/portrait/serious.webp': { bytes: 83060, sha256: 'ab2a3540f6eb38759af30125d05139fe348624d135b2109fab50cd00aefb08d2' },
+  'assets/mengjing/portrait/shy.webp': { bytes: 82956, sha256: '21867cae39cf3b8b3c95523766a6482b6bf20425d7c80e9c0e0759de4c6df1b2' },
+  'assets/mengjing/portrait/sleepy.webp': { bytes: 78340, sha256: 'a601cf201b1be9e16ca0bbb6cf61b77ef22dfbe6214c771842c425014f4d66e1' },
+  'assets/mengjing/portrait/surprised.webp': { bytes: 84160, sha256: '8bc38889290c9cff775b3a6fdb3020b1aac29f4672894e4caea45909ce5465fe' },
+  'assets/mengjing/portrait/thinking.webp': { bytes: 83004, sha256: 'f6dbd6872556fd15b1fa3fd19f84e3c9fbe520b8290bd2456e714435675c4110' },
+  'assets/mengjing/avatar.webp': { bytes: 30876, sha256: 'c33471b8f50d0584733a03d9964b8589d79f3d6899f4db2f7720b64d2fcd12e8' },
+};
+
+function localSource(path, host) {
+  const metadata = LOCAL_ASSET_METADATA[path];
+  if (!metadata) throw new Error('本地素材缺少元数据：' + path);
+  return { type: 'local', path, ...(host ? { host } : {}), ...metadata };
+}
+
 function buildFaceAssets() {
-  const others = FACE_HOSTS.map((h) => h.id).filter((id) => id !== DEFAULT_FACE_HOST);
-  return emotionsWithArt().map((e) => ({
-    id: `face-${e.id}`,
+  const otherStyles = FACE_STYLES.filter((style) => style.id !== DEFAULT_FACE_STYLE);
+  return emotionsWithArt().map((emotion) => ({
+    id: `face-${emotion.id}`,
     kind: 'sprite',
-    source: { type: 'remote', path: faceUrlFor(e, DEFAULT_FACE_HOST), host: DEFAULT_FACE_HOST },
-    altSources: others
-      .map((h) => ({ type: 'remote', path: faceUrlFor(e, h), host: h }))
-      .filter((s) => s.path),
-    // 标准标签 + 全部别名都进 tags：模型写近义词也能解析到同一张图
-    tags: [e.id, ...e.aliases],
+    source: localSource(faceUrlFor(emotion), DEFAULT_FACE_STYLE),
+    altSources: otherStyles.map((style) => localSource(faceUrlFor(emotion, style.id), style.id)),
+    tags: [emotion.id, ...emotion.aliases],
     preload: 'lazy',
     lifetime: 'chat',
     fallbackAssetId: null,
-    provenance: {
-      origin: '本作角色表情（驾驶员自绘，托管在自有图床）',
-      license: '本作素材',
-    },
+    provenance: { ...CHARACTER_PROVENANCE },
   }));
 }
 
-/**
- * 对话背景。这是 `bg` 渲染面里唯一的条目，所以它自动成为该类默认项
- * （kindDefault：该类只有一条时就是它）——不额外标 isDefault，避免两处说法。
- *
- * 走本地文件而不是远端：背景是整场都在的底图，第三方免费图床挂了整页就空一块。
- * 单文件产物里由打包器把路径换成内联 data URL，见 tools/build-single-html.mjs。
- *
- * bytes / sha256 是真算出来的（282,454 字节），换图必须同步更新，测试会核。
- */
-function buildBgAssets() {
-  return [{
-    id: 'bg-chat-room',
-    kind: 'bg',
-    source: { type: 'local', path: 'assets/bg/chat-room.jpg' },
-    tags: ['房间', '日常', '鲸'],
-    preload: 'eager',
-    lifetime: 'chat',
-    fallbackAssetId: null,
-    bytes: 282454,
-    sha256: '4e147ef748e6902dc20d1052d678b5a1376d9ec6b9878514017628d031c54230',
-    provenance: {
-      origin: '本作对话背景（驾驶员自绘）',
-      license: '本作素材',
-    },
-  }];
-}
-
-/**
- * 清单本体。
- * 立绘与背景都由上面的函数派生；表情包（sticker）仍是空的，加条目时照抄 ASSET_TEMPLATE。
- */
 export const ASSET_MANIFEST = {
   schemaVersion: ASSET_SCHEMA_VERSION,
   workId: 'dreamwhale-vocab',
-  assets: [...buildFaceAssets(), ...buildBgAssets()],
+  assets: [
+    ...buildFaceAssets(),
+    {
+      id: CHARACTER_AVATAR_ID,
+      kind: 'sticker',
+      source: localSource(CHARACTER_AVATAR_PATH),
+      tags: ['梦鲸头像'],
+      preload: 'eager',
+      lifetime: 'chat',
+      fallbackAssetId: null,
+      provenance: { ...CHARACTER_PROVENANCE },
+    },
+  ],
 };
 
-/** 对话背景在清单里的 id。界面与测试都用这个常量，不写死字符串。 */
-export const CHAT_BG_ID = 'bg-chat-room';
-
-/** 单条资产的完整形状，照抄改值即可。 */
 export const ASSET_TEMPLATE = {
   id: 'bg-rainy-street',
   kind: 'bg',
@@ -107,16 +91,13 @@ export const ASSET_TEMPLATE = {
   preload: 'lazy',
   lifetime: 'chat',
   fallbackAssetId: null,
-  provenance: { origin: '自绘 / 或写清来源', license: '写清授权，未确认就填 unknown' },
-  // 本地资产可声明以下两项，校验器会核；远端资产可留空
+  provenance: { origin: '待登记来源', license: 'unknown' },
   bytes: null,
   sha256: null,
 };
 
-/** 内联表情包的标签语法。与 <Question> 平行，便于同一个渲染器切分。 */
 export const STICKER_TAG = 'Sticker';
 
-/** 空清单，供测试与「先跑通再加图」的场景使用。 */
 export function emptyManifest() {
   return { schemaVersion: ASSET_SCHEMA_VERSION, workId: 'dreamwhale-vocab', assets: [] };
 }

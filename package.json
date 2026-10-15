@@ -3,12 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "梦鲸词汇 · 鲸鱼娘英语对话副本。零依赖纯静态站点。",
+  "description": "梦鲸词汇 · 梦鲸英语对话副本。零依赖纯静态站点。",
   "scripts": {
-    "test": "node tests/run.mjs",
+    "test": "node tests/run.mjs && node --test tests/*.test.mjs",
     "serve": "node serve.mjs",
     "build:single": "node tools/build-single-html.mjs",
-    "build:faces": "node tools/build-faces.mjs",
     "build:words": "node tools/build-cet4.mjs"
   }
 }

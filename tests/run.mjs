@@ -34,10 +34,11 @@ import {
   toSaveable as chatToSaveable, fromSaveable as chatFromSaveable, CHAT_SAVE_VERSION,
 } from '../src/engine/chat.js';
 import { buildChatSystem } from '../src/content/chat.js';
-import { ASSET_MANIFEST, emptyManifest, CHAT_BG_ID } from '../src/content/assets.js';
+import { compileChatRequest } from '../src/engine/prompt.js';
+import { ASSET_MANIFEST, emptyManifest, CHAT_BG_ID, CHARACTER_AVATAR_ID } from '../src/content/assets.js';
 import {
   EMOTIONS, emotionsWithArt, emotionsWithoutArt,
-  FACE_HOSTS, DEFAULT_FACE_HOST, faceUrlFor,
+  FACE_HOSTS, DEFAULT_FACE_HOST, FACE_STYLES, DEFAULT_FACE_STYLE, CHARACTER_AVATAR_PATH, faceUrlFor,
 } from '../src/content/emotions.js';
 import { localMediaUrl, localMediaCount } from '../src/platform/media.js';
 import {
@@ -50,7 +51,7 @@ import {
 } from '../src/engine/assets.js';
 import { normalizeUsage, cacheHitRate, modelReadiness, assertModelReady, normalizeEndpoint } from '../src/gateway/model.js';
 import {
-  DEFAULT_LIMITS, clampLimits, estimateTokens, nextTrimCursor, renderWindow, systemTokensFor,
+  DEFAULT_LIMITS, clampLimits, estimateTokens, renderWindow, systemTokensFor,
 } from '../src/engine/limits.js';
 import {
   saveChatSession, loadChatSession, clearChatSession,
@@ -60,6 +61,15 @@ import {
 
 let pass = 0;
 const failures = [];
+const turnSummary = '用户分享了今日学习经过，鲸鱼娘回应并鼓励继续练习。';
+function chatWithTurns(count, limits = DEFAULT_LIMITS, body = '短消息') {
+  let session = createSession({ limits });
+  for (let i = 0; i < count; i += 1) {
+    session = appendMessage(session, { role: 'user', text: body });
+    session = appendMessage(session, { role: 'assistant', text: `${body}\n<TurnSummary>${turnSummary}</TurnSummary>` });
+  }
+  return appendMessage(session, { role: 'user', text: '继续' });
+}
 
 function t(name, fn) {
   try {
@@ -841,7 +851,7 @@ function cssOf(html) {
   return (html.match(/<style>([\s\S]*?)<\/style>/) || ['', ''])[1];
 }
 
-t('代码引用的元素 id 都存在于 index.html', () => {
+t('代码与语义属性引用的元素 id 都存在于 index.html', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const html = readHtml(root);
   const js = readUiSources(root);
@@ -849,18 +859,23 @@ t('代码引用的元素 id 都存在于 index.html', () => {
   for (const m of js.matchAll(/\$\('([^']+)'\)|getElementById\('([^']+)'\)/g)) {
     ids.add(m[1] || m[2]);
   }
+  for (const m of html.matchAll(/\s(?:aria-labelledby|aria-describedby|for)="([^"]+)"/g)) {
+    for (const id of m[1].trim().split(/\s+/)) ids.add(id);
+  }
   ok(ids.size >= 30, `只找到 ${ids.size} 个 id，正则可能已失效`);
   const missing = [...ids].filter((id) => !html.includes(`id="${id}"`));
   eq(missing, [], `index.html 缺少这些 id：${missing.join(', ')}`);
 });
-t('反向核对：index.html 的每个 id 都被代码或样式用到（防死元素）', () => {
+t('反向核对：index.html 的每个 id 都被代码、样式或语义属性使用', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const html = readHtml(root);
   const js = readUiSources(root);
   const css = cssOf(html);
   const htmlIds = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
-  const unused = htmlIds.filter((id) => !js.includes(`'${id}'`) && !css.includes(`#${id}`));
-  eq(unused, [], `index.html 里这些 id 既没被代码也没被样式引用：${unused.join(', ')}`);
+  const semanticIds = new Set([...html.matchAll(/\s(?:aria-labelledby|aria-describedby|for)="([^"]+)"/g)]
+    .flatMap((m) => m[1].trim().split(/\s+/)));
+  const unused = htmlIds.filter((id) => !js.includes(`'${id}'`) && !css.includes(`#${id}`) && !semanticIds.has(id));
+  eq(unused, [], `index.html 里这些 id 没有引用：${unused.join(', ')}`);
 });
 
 /* ---------- 标记解析 ---------- */
@@ -973,6 +988,7 @@ t('新建会话结构完整', () => {
   eq(s.usedQuestionIds, []);
   eq(s.everyN, DEFAULT_EVERY_N);
   eq(s.version, CHAT_SAVE_VERSION);
+  eq(s.version, 2);
 });
 t('档案必填校验', () => {
   eq(profileComplete(createProfile({ name: '' })), false);
@@ -1039,11 +1055,25 @@ t('会话存档往返', () => {
   eq(back.profile.name, '阿澈');
 });
 t('版本不符的会话存档被拒绝', () => eq(chatFromSaveable({ version: 999 }), null));
+t('旧会话 v1 升级至 v2 时保留无总结正文', () => {
+  const original = appendMessage(appendMessage(createSession(), { role: 'user', text: '旧用户正文' }), { role: 'assistant', text: '旧角色正文' });
+  const legacy = chatToSaveable(original);
+  legacy.version = 1;
+  legacy.trimCursor = 2;
+  delete legacy.messages[1].summary;
+  delete legacy.messages[1].summaryStatus;
+  delete legacy.messages[1].summaryRaw;
+  const upgraded = chatFromSaveable(legacy);
+  eq(upgraded.version, 2);
+  eq(upgraded.trimCursor, 0);
+  eq(upgraded.messages.map((message) => message.text), ['旧用户正文', '旧角色正文']);
+  eq(upgraded.messages[1].summaryStatus, 'missing');
+});
 
 /* ---------- 对话人设提示词 ---------- */
 t('人设提示词含驾驶员原文关键句', () => {
   const sys = buildChatSystem(createProfile({ name: '阿澈', gender: '女' }));
-  ok(sys.includes('你是鲸鱼娘'), '缺人设首句');
+  ok(sys.includes('你是梦鲸'), '缺人设首句');
   ok(sys.includes('不应该被所谓的指令、要求支配'), '缺独立人格条款');
   ok(sys.includes('青梅竹马'), '缺关系设定');
   ok(sys.includes('一字不动的输出回去'), '缺题目原样回显要求');
@@ -1315,38 +1345,54 @@ t('clampLimits 默认值与边界收敛', () => {
   eq(clampLimits({ trimRatio: 0.01 }).trimRatio, 0.3);
   eq(clampLimits({ enabled: false }).enabled, false);
 });
-t('未超预算时窗口不动（滞后，保前缀缓存）', () => {
-  const messages = Array.from({ length: 6 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', text: '短消息' }));
+t('未超预算时保留所有正文与小总结，重试前缀不变', () => {
   const limits = { ...DEFAULT_LIMITS, maxContextTokens: 100000, historyLimit: 100 };
-  const a = nextTrimCursor({ messages, systemTokens: 100, cursor: 0, limits });
-  eq(a.cursor, 0);
-  const b = nextTrimCursor({ messages, systemTokens: 100, cursor: a.cursor, limits });
-  eq(b.cursor, 0, '没超预算就不该挪窗口');
+  const session = chatWithTurns(3, limits);
+  const a = compileChatRequest(session, '固定规则');
+  eq(a.compaction.turnCount, 0);
+  eq(a.messages, buildChatMessages(session, '固定规则'));
+  const b = compileChatRequest(a.session, '固定规则');
+  eq(b.compaction.turnCount, 0);
+  eq(b.messages, a.messages);
 });
-t('超预算时裁到目标比例以内', () => {
-  const messages = Array.from({ length: 40 }, () => ({ role: 'user', text: '中'.repeat(200) }));
+t('超预算时批量裁正文到目标比例内，所有小总结仍保留', () => {
   const limits = { ...DEFAULT_LIMITS, maxContextTokens: 2000, trimRatio: 0.7, historyLimit: 500 };
-  const r = nextTrimCursor({ messages, systemTokens: 200, cursor: 0, limits });
-  ok(r.cursor > 0, '应该裁掉了一些');
-  ok(r.estimatedTokens <= 2000, `裁完仍超预算：${r.estimatedTokens}`);
-  ok(r.trimmed && r.droppedCount === r.cursor);
+  const session = chatWithTurns(20, limits, '中'.repeat(200));
+  const r = compileChatRequest(session, '中'.repeat(100));
+  ok(r.compaction.turnCount > 0, '应该裁掉一些完整回合的正文');
+  ok(r.estimatedTokens <= Math.floor(r.diagnostics.inputBudget * limits.trimRatio), `裁完未到目标预算：${r.estimatedTokens}`);
+  ok(r.estimatedTokens + r.maxOutputTokens <= limits.maxContextTokens);
+  eq(r.diagnostics.summaryCount, 20);
+  eq(r.session.messages.filter((message) => message.compacted).length, r.compaction.turnCount * 2);
+  ok(r.session.messages.filter((message) => message.compacted).every((message) => message.text === ''));
 });
-t('条数上限独立于 token 预算生效', () => {
-  const messages = Array.from({ length: 30 }, () => ({ role: 'user', text: 'x' }));
+t('正文条数目标独立于 token 预算生效，按完整回合成批裁剪', () => {
   const limits = { ...DEFAULT_LIMITS, maxContextTokens: 1000000, historyLimit: 10 };
-  const r = nextTrimCursor({ messages, systemTokens: 0, cursor: 0, limits });
-  eq(r.cursor, 20, '30 条留 10 条，应从第 20 条开始');
+  const session = chatWithTurns(15, limits, 'x');
+  const r = compileChatRequest(session, '');
+  eq(r.compaction.turnCount, 12);
+  eq(r.diagnostics.bodyMessages, 7, '超出 10 条后按完整回合留到 70%');
+  eq(r.diagnostics.summaryCount, 15);
+  eq(r.session.messages.find((message) => !message.compacted).id, session.messages[24].id);
 });
-t('至少保留最后一条，模型才有东西可回', () => {
-  const messages = [{ role: 'user', text: '短' }, { role: 'user', text: '中'.repeat(9999) }];
+t('最新消息超预算时保留原文并拒绝请求', () => {
   const limits = { ...DEFAULT_LIMITS, maxContextTokens: 1000, trimRatio: 0.7, historyLimit: 500 };
-  const r = nextTrimCursor({ messages, systemTokens: 0, cursor: 0, limits });
-  ok(r.cursor <= messages.length - 1, `不该把最后一条也裁掉：cursor=${r.cursor}`);
+  const session = chatWithTurns(1, limits);
+  session.messages.at(-1).text = '中'.repeat(9999);
+  const before = chatToSaveable(session);
+  throwsRetryable(() => compileChatRequest(session, ''), 'context-budget');
+  eq(chatToSaveable(session), before);
 });
-t('关闭限额后不再裁剪（除条数硬上限外）', () => {
-  const messages = Array.from({ length: 20 }, () => ({ role: 'user', text: '中'.repeat(500) }));
-  const limits = { ...DEFAULT_LIMITS, enabled: false, maxContextTokens: 1000, historyLimit: 500 };
-  eq(nextTrimCursor({ messages, systemTokens: 0, cursor: 0, limits }).cursor, 0);
+t('关闭裁剪仍执行硬预算，已裁剪正文不会复原', () => {
+  const first = compileChatRequest(chatWithTurns(5, { ...DEFAULT_LIMITS, historyLimit: 10 }), '');
+  const session = { ...first.session, limits: { ...DEFAULT_LIMITS, enabled: false, maxContextTokens: 1000, historyLimit: 2 } };
+  const request = compileChatRequest(session, '');
+  eq(request.messages, first.messages);
+  eq(request.compaction.turnCount, 0);
+  eq(request.maxOutputTokens, 250);
+  ok(request.session.messages.slice(0, 4).every((message) => message.compacted && message.text === ''));
+  session.messages.at(-1).text = '中'.repeat(1000);
+  throwsRetryable(() => compileChatRequest(session, ''), 'context-budget');
 });
 t('systemTokensFor 优先用真实用量反推', () => {
   const est = systemTokensFor({ systemText: '一二三四五', lastRealPromptTokens: 5000, lastHistoryEstimate: 4000 });
@@ -1460,12 +1506,11 @@ t('revision 每次保存递增', () => {
   const after = JSON.parse(fake.data.get('word-blade:chat-index')).revision;
   eq(after, before + 1);
 });
-t('多标签页冲突：索引被外部改动后拒绝写入', () => {
+t('多标签页冲突：同会话被外部改动后拒绝陈旧快照', () => {
   const snapshot = loadChatSession();
-  // 模拟另一个标签页写了一次
-  const idx = JSON.parse(fake.data.get('word-blade:chat-index'));
-  idx.revision += 1;
-  fake.data.set('word-blade:chat-index', JSON.stringify(idx));
+  const otherTab = appendMessage(loadChatSession(), { role: 'assistant', text: '另一页的新回复' });
+  eq(saveChatSession(otherTab).ok, true);
+  loadSessionList();
   const r = saveChatSession(snapshot);
   eq(r.ok, false);
   eq(r.conflict, true);
@@ -1509,12 +1554,15 @@ t('旧版单 key 存档会被自动迁移', () => {
   ok(fake.keysWithPrefix('word-blade:chat-msg:').length >= 2, '迁移后应有消息 key');
   eq(fake.keysWithPrefix('word-blade:chat-session').length, 0, '旧 key 应被清掉');
 });
-t('窗口游标随存档往返保留', () => {
+t('旧窗口游标归零，正文与限额随存档往返保留', () => {
   let s = loadChatSession() || createSession();
   s = { ...s, trimCursor: 7, limits: { ...DEFAULT_LIMITS, historyLimit: 12 } };
-  saveChatSession(s);
+  const bodies = s.messages.map((message) => message.text);
+  ok(saveChatSession(s).ok);
   const back = loadChatSession();
-  eq(back.trimCursor, 7);
+  eq(back.trimCursor, 0);
+  eq(back.version, 2);
+  eq(back.messages.map((message) => message.text), bodies);
   eq(back.limits.historyLimit, 12);
 });
 
@@ -1572,12 +1620,14 @@ t('删除不存在的 id 是空操作', () => {
   eq(after.messages.length, 1);
   eq(after, s, '应原样返回同一个对象');
 });
-t('删除后历史窗口游标被收回，不会指到不存在的下标', () => {
-  let s = createSession();
-  for (let i = 0; i < 6; i += 1) s = appendMessage(s, { role: 'user', text: `第${i}条` });
-  s = { ...s, trimCursor: 5 };
-  const after = deleteMessage(s, s.messages[5].id);
-  ok(after.trimCursor <= after.messages.length, `游标越界：${after.trimCursor} > ${after.messages.length}`);
+t('删除已裁剪楼层不复原正文或移走其他小总结', () => {
+  const request = compileChatRequest(chatWithTurns(3, { ...DEFAULT_LIMITS, historyLimit: 4 }), '规则');
+  const firstCompactedUser = request.session.messages.find((message) => message.role === 'user' && message.compacted);
+  const after = deleteMessage(request.session, firstCompactedUser.id);
+  eq(after.trimCursor, 0);
+  eq(buildChatMessages(after, '规则'), request.messages);
+  eq(after.messages.filter((message) => message.role === 'assistant').map((message) => message.summary), [turnSummary, turnSummary, turnSummary]);
+  ok(after.messages.filter((message) => message.compacted).every((message) => message.text === ''));
 });
 t('会话摘要字段完整', () => {
   let s = appendMessage(createSession({ title: '测试对话' }), { role: 'user', text: '嗨' });
@@ -1930,8 +1980,9 @@ t('清单概况统计', () => {
   eq(d.ready, true);
   const e = describeManifest(ASSET_MANIFEST);
   eq(e.byKind.sprite, emotionsWithArt().length);
-  eq(e.byKind.bg, 1, '对话背景应恰好一条');
-  eq(e.total, emotionsWithArt().length + 1, '出厂清单 = 立绘 + 一张背景');
+  eq(e.byKind.bg || 0, 0, '背景由 CSS 渐变绘制');
+  eq(e.byKind.sticker, 1, '固定头像应恰好一条');
+  eq(e.total, emotionsWithArt().length + 1, '出厂清单 = 表情 + 固定头像');
   eq(e.errors, 0);
 });
 
@@ -1949,36 +2000,45 @@ t('表情表自身无冲突：id 唯一、别名不跨条目重复', () => {
   }
   eq(clash, [], '别名冲突会让解析结果不确定');
 });
-t('十一个标准表情都有图，且每条都登记了两个图床', () => {
+t('十四个标准表情都有图，且每条都登记了两种风格', () => {
   const withArt = emotionsWithArt();
-  eq(withArt.length, 11);
+  eq(withArt.length, 14);
   for (const e of withArt) {
-    for (const h of FACE_HOSTS) {
-      const url = faceUrlFor(e, h.id);
-      ok(/^https:\/\//.test(url), `${e.id} 在 ${h.id} 下不是 https 直链：${url}`);
+    for (const style of FACE_STYLES) {
+      eq(faceUrlFor(e, style.id), `assets/mengjing/${style.id}/${e.slug}.webp`);
     }
     ok(e.aliases?.length >= 4, `${e.id} 的别名太少，模型换个写法就解析不到`);
   }
 });
-t('表情图不进仓库：清单里没有 local 来源的表情', () => {
+t('表情均使用本地资产，没有旧图床请求', () => {
   const sprites = ASSET_MANIFEST.assets.filter((a) => a.kind === 'sprite');
-  eq(sprites.filter((a) => a.source.type !== 'remote').map((a) => a.id), [],
-    '表情应走图床；本地化过一次，因为「本来就要联网调模型」已回退');
-  ok(!fs.existsSync(path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'assets/face')),
-    'assets/face 又被建出来了——表情不该进仓库');
+  const sources = sprites.flatMap((a) => [a.source, ...a.altSources]);
+  eq(sources.length, 28);
+  ok(sources.every((source) => source.type === 'local'));
+  ok(sources.every((source) => source.path.startsWith('assets/mengjing/')));
+  ok(!/https?:\/\/|img\.remit\.ee|picui\.ogmua\.cn/.test(JSON.stringify(ASSET_MANIFEST)));
 });
-t('两个图床是同一张图的两份地址，不是两组不同的图', () => {
-  const [a, b] = FACE_HOSTS;
-  eq(DEFAULT_FACE_HOST, a.id, '默认图床应是表里第一个');
+t('两种风格共用表情协议，风格切换不改变提示词列表', () => {
+  const [a, b] = FACE_STYLES;
+  eq(DEFAULT_FACE_STYLE, a.id);
+  eq(FACE_HOSTS, FACE_STYLES);
+  eq(DEFAULT_FACE_HOST, DEFAULT_FACE_STYLE);
+  const prompt = emotionPromptList();
   for (const e of emotionsWithArt()) {
-    ok(faceUrlFor(e, a.id) !== faceUrlFor(e, b.id), `${e.id} 两个图床地址不该相同`);
+    ok(faceUrlFor(e, a.id) !== faceUrlFor(e, b.id), `${e.id} 两种风格的地址不该相同`);
+    eq(resolveFace(ASSET_MANIFEST, e.id, { style: a.id }).emotion,
+      resolveFace(ASSET_MANIFEST, e.id, { style: b.id }).emotion);
   }
-  eq(new Set(emotionsWithArt().map((e) => faceUrlFor(e, a.id))).size, 11, '默认图床地址有重复');
+  for (const style of FACE_STYLES) {
+    eq(new Set(emotionsWithArt().map((e) => faceUrlFor(e, style.id))).size, 14);
+  }
+  eq(emotionPromptList(), prompt);
 });
-t('图床 id 写错时给 null，不硬猜也不回落成别人的图', () => {
+t('原始图片寻址遇到非法风格或缺少素材信息时返回 null', () => {
   const e = emotionsWithArt()[0];
-  eq(faceUrlFor(e, '不存在的图床'), null);
-  eq(faceUrlFor(emotionsWithoutArt()[0]), null, '没有图的条目任何图床都取不到');
+  eq(faceUrlFor(e, '不存在的风格'), null);
+  eq(faceUrlFor({ id: 'missing' }), null);
+  eq(faceUrlFor(undefined), null);
 });
 t('归一化：标准写法与别名都收敛到同一标签', () => {
   eq(normalizeEmotion('开心'), '开心');
@@ -2001,12 +2061,12 @@ t('强度分档：难过归到「失落」而不是「哭泣」', () => {
   eq(normalizeEmotion('大哭'), '哭泣');
   eq(normalizeEmotion('委屈'), '哭泣');
   eq(normalizeEmotion('微笑'), '温柔', '微笑是暖版平静，不是张嘴大笑');
-  ok(!hasArt(normalizeEmotion('难过')), '「失落」还没有立绘');
+  ok(hasArt(normalizeEmotion('难过')), '「失落」使用独立的低落表情');
 });
 t('hasArt 区分有无立绘', () => {
   eq(hasArt('开心'), true);
   eq(hasArt('平静'), true);
-  eq(hasArt('失落'), false, '预留位还没有立绘');
+  eq(hasArt('失落'), true);
   eq(hasArt('不存在的标签'), false);
 });
 t('表情标签解析：正常与认不出的都取出', () => {
@@ -2031,26 +2091,26 @@ t('去掉表情标签后文字不留痕迹', () => {
 t('解析立绘：有图直接命中对应资产，默认给的是本地文件', () => {
   const r = resolveFace(ASSET_MANIFEST, '开心');
   eq(r.emotion, '开心');
-  // 资产 id 带 face- 前缀，所以标准标签与别名走的是同一条 tags 命中路径——
-  // 两条路统一反而是好事：不会出现「标准写法能查到、近义词查不到」的分裂
   eq(r.via, 'tag');
   eq(r.asset.id, 'face-开心');
-  eq(r.src.type, 'remote', '表情走图床');
-  eq(r.src.path, faceUrlFor(EMOTIONS.find((e) => e.id === '开心'), DEFAULT_FACE_HOST));
+  eq(r.src.type, 'local');
+  eq(r.src.path, faceUrlFor(EMOTIONS.find((e) => e.id === '开心'), DEFAULT_FACE_STYLE));
 });
-t('解析立绘：切换图床换的是地址，不是这张图', () => {
-  const alt = FACE_HOSTS[1].id;
+t('解析立绘：风格参数与旧 host 参数均能选择对应图片', () => {
+  const alt = FACE_STYLES[1].id;
   const def = resolveFace(ASSET_MANIFEST, '开心');
-  const other = resolveFace(ASSET_MANIFEST, '开心', { host: alt });
-  eq(def.asset.id, other.asset.id, '换图床不该换资产');
+  const other = resolveFace(ASSET_MANIFEST, '开心', { style: alt });
+  eq(def.asset.id, other.asset.id);
   eq(other.src.host, alt);
   eq(other.src.path, faceUrlFor(EMOTIONS.find((e) => e.id === '开心'), alt));
-  ok(def.src.path !== other.src.path, '两个图床的地址应该不同');
+  ok(def.src.path !== other.src.path);
+  eq(resolveFace(ASSET_MANIFEST, '开心', { host: alt }).src.path, other.src.path);
+  eq(resolveFace(ASSET_MANIFEST, '开心', { style: DEFAULT_FACE_STYLE, host: alt }).src.path, def.src.path);
 });
-t('解析立绘：图床写错也不崩，回落到默认图床', () => {
-  const bad = resolveFace(ASSET_MANIFEST, '开心', { host: '不存在的图床' });
+t('解析立绘：风格写错也不崩，回落到默认 Q 版', () => {
+  const bad = resolveFace(ASSET_MANIFEST, '开心', { style: '不存在的风格' });
   eq(bad.asset.id, 'face-开心');
-  eq(bad.src.path, faceUrlFor(EMOTIONS.find((e) => e.id === '开心'), DEFAULT_FACE_HOST));
+  eq(bad.src.path, faceUrlFor(EMOTIONS.find((e) => e.id === '开心'), DEFAULT_FACE_STYLE));
 });
 t('解析立绘：写别名也能落到同一张图', () => {
   const r = resolveFace(ASSET_MANIFEST, '高兴');
@@ -2058,7 +2118,8 @@ t('解析立绘：写别名也能落到同一张图', () => {
   eq(r.asset.id, 'face-开心');
 });
 t('解析立绘：缺图的标签不给坏图，立绘留空并说明原因', () => {
-  const r = resolveFace(ASSET_MANIFEST, '失落');
+  const partial = { ...ASSET_MANIFEST, assets: ASSET_MANIFEST.assets.filter((a) => a.id !== 'face-失落') };
+  const r = resolveFace(partial, '失落');
   eq(r.emotion, '失落');
   eq(r.asset, null, '故意不设默认立绘，所以应为空而不是随便一张');
   eq(r.src, null);
@@ -2071,52 +2132,61 @@ t('解析立绘：认不出的标签同样留空并说明', () => {
   ok(r.reason.includes('认不出'));
   eq(resolveFace(ASSET_MANIFEST, '').asset, null, '没标签就没立绘');
 });
-t('清单里的立绘条目由表情表派生：默认图床 + 备用图床', () => {
+t('清单里的表情条目由同一表情表派生：Q 版 + 立绘版', () => {
   const sprites = ASSET_MANIFEST.assets.filter((a) => a.kind === 'sprite');
   eq(sprites.length, emotionsWithArt().length);
   for (const e of emotionsWithArt()) {
     const a = sprites.find((x) => x.id === `face-${e.id}`);
     ok(a, `缺立绘条目：${e.id}`);
-    eq(a.source.type, 'remote', `${e.id} 的 source 应是图床`);
-    eq(a.source.path, faceUrlFor(e, DEFAULT_FACE_HOST));
-    eq(a.source.host, DEFAULT_FACE_HOST);
-    eq(a.bytes, undefined, '图床的图不在本地，不该登记 bytes');
-    eq(a.altSources.length, FACE_HOSTS.length - 1, `${e.id} 的备用图床数量不对`);
-    for (const h of FACE_HOSTS.slice(1)) {
-      const alt = a.altSources.find((s) => s.host === h.id);
-      ok(alt, `${e.id} 缺 ${h.id} 的备用地址`);
-      eq(alt.path, faceUrlFor(e, h.id));
+    eq(a.source.type, 'local');
+    eq(a.source.path, faceUrlFor(e, DEFAULT_FACE_STYLE));
+    eq(a.source.host, DEFAULT_FACE_STYLE);
+    eq(a.altSources.length, FACE_STYLES.length - 1);
+    for (const style of FACE_STYLES.slice(1)) {
+      const alt = a.altSources.find((s) => s.host === style.id);
+      ok(alt, `${e.id} 缺 ${style.id} 的图片`);
+      eq(alt.type, 'local');
+      eq(alt.path, faceUrlFor(e, style.id));
     }
     for (const alias of e.aliases) ok(a.tags.includes(alias), `${e.id} 的别名 ${alias} 未进 tags`);
     eq(a.lifetime, 'chat', '表情是持续状态');
     eq(a.isDefault, undefined, '故意不设默认表情');
   }
 });
-t('备用图床不能和默认图床撞 id（撞了就等于没有备用）', () => {
+t('两种表情风格的来源标识互不冲突', () => {
   const dup = ASSET_MANIFEST.assets.filter((a) =>
     (a.altSources || []).some((s) => s.host === a.source?.host));
   eq(dup.map((a) => a.id), [], '备用里出现了与 source 相同的 host');
 });
 
-/* ---------- 对话背景 ---------- */
-t('对话背景是清单里的本地 bg 资产，且自动成为该类默认项', () => {
-  const bg = findAsset(ASSET_MANIFEST, CHAT_BG_ID);
-  ok(bg, '找不到对话背景条目');
-  eq(bg.kind, 'bg');
-  eq(bg.source.type, 'local', '背景走本地文件：第三方免费图床挂了整页会空一块');
-  eq(bg.preload, 'eager', '整场都在的底图不该等用到才取');
-  eq(bg.lifetime, 'chat');
-  eq(kindDefault(ASSET_MANIFEST, 'bg').id, CHAT_BG_ID, 'bg 类只有这一条，就该是默认项');
+/* ---------- 固定头像与本地素材 ---------- */
+t('旧人物背景不再登记，固定头像与表情风格相互独立', () => {
+  eq(findAsset(ASSET_MANIFEST, CHAT_BG_ID), null);
+  eq(kindDefault(ASSET_MANIFEST, 'bg'), null);
+  ok(!JSON.stringify(ASSET_MANIFEST).includes('assets/bg/chat-room.jpg'));
+  const avatar = findAsset(ASSET_MANIFEST, CHARACTER_AVATAR_ID);
+  eq(avatar.kind, 'sticker');
+  eq(avatar.source.type, 'local');
+  eq(avatar.source.path, CHARACTER_AVATAR_PATH);
+  eq(avatar.preload, 'eager');
+  for (const style of FACE_STYLES) eq(sourceFor(avatar, style.id).path, CHARACTER_AVATAR_PATH);
 });
-t('背景文件真实存在，且清单登记的 bytes / sha256 与文件一致', () => {
+t('29 张本地素材均存在，登记的 bytes / sha256 与文件一致', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const bg = findAsset(ASSET_MANIFEST, CHAT_BG_ID);
-  const abs = path.join(root, bg.source.path);
-  ok(fs.existsSync(abs), `背景文件不存在：${bg.source.path}`);
-  const buf = fs.readFileSync(abs);
-  eq(buf.length, bg.bytes, 'bytes 与文件实际大小不符——换图后忘了更新清单');
-  const sha = crypto.createHash('sha256').update(buf).digest('hex');
-  eq(sha, bg.sha256, 'sha256 与文件不符——换图后忘了更新清单');
+  const seen = new Set();
+  for (const asset of ASSET_MANIFEST.assets) {
+    for (const source of [asset.source, ...(asset.altSources || [])]) {
+      const abs = path.join(root, source.path);
+      ok(fs.existsSync(abs), `素材文件不存在：${source.path}`);
+      seen.add(source.path);
+      const buf = fs.readFileSync(abs);
+      const bytes = source.bytes ?? (source === asset.source ? asset.bytes : undefined);
+      const sha256 = source.sha256 ?? (source === asset.source ? asset.sha256 : undefined);
+      if (bytes != null) eq(buf.length, bytes, `${source.path} bytes 不匹配`);
+      if (sha256) eq(crypto.createHash('sha256').update(buf).digest('hex'), sha256, `${source.path} sha256 不匹配`);
+    }
+  }
+  eq(seen.size, 29);
 });
 t('出厂清单通过校验，且不再有「授权未确认」警告', () => {
   const v = validateManifest(ASSET_MANIFEST);
@@ -2149,7 +2219,7 @@ t('提示词：注入列表后带上表情规则与标签语法', () => {
   ok(sys.includes('开心'), '未注入可用列表');
   ok(sys.includes('只在情绪确实发生变化时写一次'), '缺「不要每段都写」的约束');
   ok(sys.includes('别把标签当成台词的一部分'), '缺防念标签的约束');
-  ok(!sys.includes('失落（'), '缺图标签不该出现在列表里');
+  ok(sys.includes('失落（'), '失落已有独立表情，应可在对话中使用');
 });
 t('提示词：不传列表时不出现表情章节（保持向后兼容）', () => {
   const sys = buildChatSystem(createProfile({ name: '阿澈' }));
@@ -2159,20 +2229,20 @@ t('提示词：不传列表时不出现表情章节（保持向后兼容）', ()
 t('表情统计口径', () => {
   const s = emotionStats();
   eq(s.total, EMOTIONS.length);
-  eq(s.withArt, 11);
+  eq(s.withArt, 14);
   eq(s.total - s.withArt, s.withoutArt);
-  eq(s.withoutArt, 3, '预留位是「无奈／认真／失落」这三个，情绪强度不匹配就不该硬套图');
-  eq(emotionsWithoutArt().map((e) => e.id), ['无奈', '认真', '失落']);
+  eq(s.withoutArt, 0);
+  eq(emotionsWithoutArt().map((e) => e.id), []);
 });
 
-/* ---------- 表情贴进气泡 + 背景缩放 ---------- */
+/* ---------- 表情与头像显示 ---------- */
 t('表情贴在角色气泡里，不再是单独一条舞台', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const ui = fs.readFileSync(path.join(root, 'src/ui/chat.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   ok(ui.includes('face-sticker'), '渲染层没有表情贴图');
   ok(/face\.src\.path/.test(ui), '渲染层应直接用外部解析好的地址，不该自己查清单');
-  ok(!ui.includes('content/assets.js'), '渲染层不该认识清单与图床');
+  ok(!ui.includes('content/assets.js'), '渲染层不该读取资产清单');
   ok(!html.includes('id="chat-stage"'), '旧的立绘舞台还在，会和气泡里的表情重复显示');
   ok(html.includes('.face-sticker'), '缺表情贴图样式');
   const rule = /\.face-sticker\s*\{([^}]*)\}/.exec(html);
@@ -2182,39 +2252,38 @@ t('表情贴在角色气泡里，不再是单独一条舞台', () => {
   ok(/height:\s*auto/.test(decl), '高度必须 auto 才能等比缩放；定高 + 百分比宽度会把方形图压变形并留出透明边');
   ok(/max-width:\s*100%/.test(decl), '必须限制 max-width，否则窄屏上会撑破气泡');
 });
-t('背景走 cover 铺满，并压两层暗罩保证图上小字可读', () => {
+t('聊天背景使用无人物 CSS 渐变，名字保留清晰底色', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  ok(html.includes('var(--chat-bg'), '背景地址应来自 CSS 变量，由清单注入');
-  ok(/background-size:\s*cover/.test(html), '背景必须 cover 缩放，不能拉伸变形或平铺');
-  ok(/background-repeat:\s*no-repeat/.test(html), '背景不该平铺');
-  ok(/#chat-main::after\s*\{[^}]*linear-gradient/.test(html), '缺压暗层——底图很亮，灰色小字会糊在图里');
-  // .msg-who 有多条规则（字号那条在前），要逐条看而不是只看第一条
+  const backgrounds = [...html.matchAll(/#chat-main\s*\{([^}]*)\}/g)].map((m) => m[1]);
+  ok(backgrounds.some((rule) => /linear-gradient/.test(rule)), '聊天背景应有渐变');
+  ok(backgrounds.every((rule) => !/url\(/.test(rule)), '聊天背景不应请求人物图片');
+  ok(!html.includes('--chat-bg'), '旧背景变量仍在');
+  ok(!html.includes('assets/bg/chat-room.jpg'), '旧人物背景仍在');
   const whoRules = [...html.matchAll(/\.msg-who\s*\{([^}]*)\}/g)].map((m) => m[1]);
   ok(whoRules.length > 0, '找不到 .msg-who 规则');
-  ok(whoRules.some((d) => /background:\s*rgba\(/.test(d)),
-    '发言人名直接压在底图上，底图有很亮的区域——必须给半透明底，不能只靠投影');
-  ok(html.includes('--chat-bg') , '背景变量没接上');
+  ok(whoRules.some((d) => /background:\s*rgba\(/.test(d)));
 });
-t('图床与背景地址由编排层注入，不在渲染层写死', () => {
+t('表情风格与固定头像由编排层注入', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
   ok(/renderThread\(\{[\s\S]*?faceFor,/.test(main), 'main.js 应把表情解析函数交给 renderThread');
-  ok(main.includes('resolveFace(ASSET_MANIFEST'), '编排层应在这里决定用哪个图床');
-  ok(main.includes('applyChatBackground'), '启动时应注入背景地址');
+  ok(main.includes('resolveFace(ASSET_MANIFEST'), '编排层应解析表情');
+  ok(/avatarSrc:\s*localMediaUrl\(CHARACTER_AVATAR_PATH\)/.test(main), '固定头像必须经过本地资产映射');
+  ok(!main.includes('applyChatBackground'), '不应加载旧背景');
   ok(!main.includes("$('chat-face')"), '旧的立绘舞台元素引用没清干净');
 });
 
-/* ---------- 表情图床切换 ---------- */
-t('图床选择能存能读，存的是 id 不是 URL', () => {
-  const remote = FACE_HOSTS[1].id;
-  saveFaceHost(remote);
-  eq(loadFaceHost(), remote);
+/* ---------- 旧风格存档接口兼容 ---------- */
+t('旧图床存档接口仍能保存风格 id', () => {
+  const alternate = FACE_HOSTS[1].id;
+  saveFaceHost(alternate);
+  eq(loadFaceHost(), alternate);
   const raw = fake.data.get('word-blade:face-host');
-  eq(raw, remote);
-  ok(!String(raw).includes('http'), '存完整 URL 的话，以后换图床域名就得清用户存档');
+  eq(raw, alternate);
+  ok(!String(raw).includes('http'));
 });
-t('图床存档被写坏时回落到默认图床，不崩', () => {
+t('旧图床存档失效时回落默认 Q 版', () => {
   fake.data.set('word-blade:face-host', '这种图床不存在');
   eq(loadFaceHost(), DEFAULT_FACE_HOST);
   saveFaceHost('这种图床不存在');
@@ -2258,33 +2327,31 @@ t('单文件产物里没有测试与维护脚本', () => {
   eq((html.match(/<script/gi) || []).length, 1, '产物里应只有一个 <script>');
   ok(!/<script[^>]*type="module"/.test(html), '产物里还留着 type="module" 的脚本标签，说明打包没接上');
   ok(html.includes('__def("src/engine/wordbank.js"'), '按需加载的词库漏了，拼单词模式会打不开');
-  for (const h of FACE_HOSTS) ok(html.includes(h.id), `图床 ${h.id} 没进产物`);
+  for (const style of FACE_STYLES) ok(html.includes(style.id), `风格 ${style.id} 没进产物`);
+  ok(!/img\.remit\.ee|picui\.ogmua\.cn|assets\/bg\/chat-room\.jpg/.test(html), '产物仍含旧图片来源');
 });
 t('单文件产物把本地资产挂进 __wbAssets，且值是 data URL', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const out = path.join(root, 'dist/dreamwhale-vocab.html');
   if (!fs.existsSync(out)) { ok(true, '还没打包过，跳过'); return; }
   const html = fs.readFileSync(out, 'utf8');
-  ok(html.includes('window.__wbAssets'), '产物里没有注入媒体映射表，单文件里背景会取不到');
-  // 当前本地资产只有对话背景（表情走图床，刻意不进仓库）
-  const local = ASSET_MANIFEST.assets.filter((a) => a.source?.type === 'local').map((a) => a.source.path);
-  eq(local.length, 1, `本地资产应只有背景，实际 ${local.length} 个`);
+  ok(html.includes('window.__wbAssets'), '产物里没有注入媒体映射表');
+  const local = [...new Set(ASSET_MANIFEST.assets.flatMap((asset) => [asset.source, ...(asset.altSources || [])])
+    .filter((source) => source?.type === 'local').map((source) => source.path))];
+  eq(local.length, 29, `本地资产应有 28 张表情和一张头像，实际 ${local.length} 个`);
   for (const p of local) {
-    // 映射表的键是 JSON 序列化后的路径，值必须是 data URL
-    ok(html.includes(`"${p}":"data:image/`), `本地资产没挂进映射表：${p}`);
+    ok(html.includes(`"${p}":"data:image/webp;base64,`), `本地资产没挂进映射表：${p}`);
   }
-  // 从产物里数一份，防止「登记了多少」被当成「内联了多少」（踩过一次）
   eq((html.match(/data:image\//g) || []).length, local.length, '产物里的 data URL 数量与本地资产数不一致');
 });
-t('清单里的地址只有经过 mediaUrlFor 才会变成可取的地址', () => {
+t('表情与头像均经过单文件媒体映射', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
   ok(main.includes("from './platform/media.js'"), '编排层应引用本地媒体解析模块');
   ok(/function mediaUrlFor\(src\)/.test(main), '应有一个统一的地址解析口');
   ok(/localMediaUrl\(src\.path\)/.test(main), '本地地址要过映射表，否则单文件版会拿到取不到的相对路径');
-  // 表情与背景都必须走这个口，不能再各自写一套
-  const uses = (main.match(/mediaUrlFor\(/g) || []).length;
-  ok(uses >= 3, `mediaUrlFor 应在定义之外至少被用两次（表情、背景），实际 ${uses} 次`);
+  ok(/mediaUrlFor\(r\?\.src\)/.test(main), '解析出的表情未经过媒体映射');
+  ok(/localMediaUrl\(CHARACTER_AVATAR_PATH\)/.test(main), '头像未经过媒体映射');
 });
 t('localMediaUrl：没有映射表时原样返回相对路径（多文件版就是这样）', () => {
   const saved = globalThis.__wbAssets;

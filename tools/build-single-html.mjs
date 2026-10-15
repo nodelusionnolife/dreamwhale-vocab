@@ -7,17 +7,17 @@
 // 做四件事：
 //   1. 从 src/main.js 出发 DFS 收集模块（顺带检出循环依赖，有环就报错退出）
 //   2. 每个模块包进 __def(id, factory)，静态 import 变成 __req(id) 解构
-//   3. 动态 import('./engine/wordbank.js') 变成 Promise.resolve(__req(...))
+//   3. 动态 import('./engine/wordbank.js') 变成 Promise.resolve().then(() => __req(...))
 //   4. 把结果内联进 index.html，替换掉 <script type="module" src> 那一行
 //
 // 只打包 main.js 能走到的模块，所以 tests/ 和 tools/ 天然进不来。
-// 图片不进包：立绘走远程 URL。
 //
 // 用法：node tools/build-single-html.mjs [输出路径]
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { Script } from 'node:vm';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const ENTRY = 'src/main.js';
@@ -159,20 +159,9 @@ function dynamicImportSpecs(code, id) {
 
 function rewriteDynamicImports(code, id) {
   return code.replace(/import\(\s*['"]([^'"]+)['"]\s*\)/g,
-    (full, spec) => `Promise.resolve(__req(${JSON.stringify(toId(path.dirname(id), spec))}))`);
+    (full, spec) => `Promise.resolve().then(() => __req(${JSON.stringify(toId(path.dirname(id), spec))}))`);
 }
 
-/**
- * 本地媒体 → 运行时映射（不是文本替换）。
- *
- * 只收**清单里真登记的**本地资产（source.type === 'local'），顺手核清单声明的
- * bytes / sha256：这两个字段写了就该是真的，对不上就直接报错。
- *
- * 为什么不做文本替换：表情的路径是 `assets/face/${slug}.jpg` 这样在运行时拼出来的，
- * 源码里没有那个字面量，替换根本找不到它——踩过一次，表情一张没进包，
- * 而当时的统计还显示「已内联 12 个」。改成注入 __wbAssets，由 src/platform/media.js
- * 在运行时查表，多文件版查不到就原样用相对路径。
- */
 const MIME_BY_EXT = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
   '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml',
@@ -183,28 +172,35 @@ const { ASSET_MANIFEST } = await import(
 );
 
 const inlinedAssets = [];
-const localAssetMap = {};
+const localAssetMap = Object.create(null);
+const localBuffers = new Map();
 
 for (const a of ASSET_MANIFEST?.assets || []) {
-  if (a?.source?.type !== 'local') continue;
-  const rel = a.source.path;
-  const abs = path.join(ROOT, rel);
-  if (!fs.existsSync(abs)) throw new Error(`清单登记的本地媒体不存在：${rel}（资产 ${a.id}）`);
-  const buf = fs.readFileSync(abs);
-  if (Number.isInteger(a.bytes) && a.bytes !== buf.length) {
-    throw new Error(`资产 ${a.id} 的 bytes 声明 ${a.bytes}，实际 ${buf.length}——换图后忘了更新清单`);
-  }
-  if (a.sha256) {
-    const { createHash } = await import('node:crypto');
-    const real = createHash('sha256').update(buf).digest('hex');
-    if (real !== String(a.sha256).toLowerCase()) {
-      throw new Error(`资产 ${a.id} 的 sha256 不匹配——换图后忘了更新清单`);
+  for (const source of [a?.source, ...(a?.altSources || [])]) {
+    if (source?.type !== 'local') continue;
+    const rel = source.path;
+    const abs = path.join(ROOT, rel);
+    if (!fs.existsSync(abs)) throw new Error(`清单登记的本地媒体不存在：${rel}（资产 ${a.id}）`);
+    const buf = localBuffers.get(rel) || fs.readFileSync(abs);
+    localBuffers.set(rel, buf);
+    const bytes = source.bytes ?? (source === a.source ? a.bytes : undefined);
+    const sha256 = source.sha256 ?? (source === a.source ? a.sha256 : undefined);
+    if (Number.isInteger(bytes) && bytes !== buf.length) {
+      throw new Error(`资产 ${a.id}（${rel}）的 bytes 声明 ${bytes}，实际 ${buf.length}`);
     }
+    if (sha256) {
+      const { createHash } = await import('node:crypto');
+      const real = createHash('sha256').update(buf).digest('hex');
+      if (real !== String(sha256).toLowerCase()) {
+        throw new Error(`资产 ${a.id}（${rel}）的 sha256 不匹配`);
+      }
+    }
+    if (localAssetMap[rel]) continue;
+    const mime = MIME_BY_EXT[path.extname(rel).toLowerCase()];
+    if (!mime) throw new Error(`资产 ${a.id} 的扩展名认不出：${rel}`);
+    localAssetMap[rel] = `data:${mime};base64,${buf.toString('base64')}`;
+    inlinedAssets.push({ id: a.id, rel, bytes: buf.length });
   }
-  const mime = MIME_BY_EXT[path.extname(rel).toLowerCase()];
-  if (!mime) throw new Error(`资产 ${a.id} 的扩展名认不出：${rel}`);
-  localAssetMap[rel] = `data:${mime};base64,${buf.toString('base64')}`;
-  inlinedAssets.push({ id: a.id, rel, bytes: buf.length });
 }
 
 const modules = new Map();
@@ -212,8 +208,8 @@ const order = [];
 const visiting = new Set();
 
 function walk(id) {
-  if (modules.has(id)) return;
   if (visiting.has(id)) throw new Error(`检出了循环依赖：${id}（打包器不支持有环的模块图）`);
+  if (modules.has(id)) return;
   visiting.add(id);
   const mod = transformModule(id);
   modules.set(id, mod);
@@ -233,14 +229,21 @@ walk(ENTRY);
 
 const RUNTIME = `(function () {
   'use strict';
-  var defs = {}, cache = {};
+  var defs = {}, cache = {}, failures = {};
   function __def(id, fn) { defs[id] = fn; }
   function __req(id) {
+    if (Object.prototype.hasOwnProperty.call(failures, id)) throw failures[id];
     if (Object.prototype.hasOwnProperty.call(cache, id)) return cache[id];
     if (!defs[id]) throw new Error('模块未打包：' + id);
     var module = { exports: {} };
     cache[id] = module.exports;
-    defs[id](module, module.exports, __req);
+    try {
+      defs[id](module, module.exports, __req);
+    } catch (error) {
+      delete cache[id];
+      failures[id] = error;
+      throw error;
+    }
     return module.exports;
   }
   window.__wbModules = __req; // 排查用：控制台可 __wbModules('src/engine/limits.js')
@@ -307,18 +310,9 @@ for (const a of inlinedAssets) {
 }
 
 const outPath = path.isAbsolute(OUT) ? OUT : path.join(ROOT, OUT);
+new Script(safeBundle, { filename: outPath });
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, outHtml, 'utf8');
-
-// 自检：产物必须是能解析的经典脚本（有 export/import 残留就会在这里炸）
-const checkFile = path.join(path.dirname(outPath), '.syntax-check.cjs');
-fs.writeFileSync(checkFile, safeBundle, 'utf8');
-try {
-  const { execFileSync } = await import('node:child_process');
-  execFileSync(process.execPath, ['--check', checkFile], { stdio: 'pipe' });
-} finally {
-  fs.rmSync(checkFile, { force: true });
-}
 
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 console.log(`已打包 ${order.length} 个模块 → ${path.relative(ROOT, outPath)}`);

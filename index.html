@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>梦鲸词汇 · 鲸鱼娘对话副本</title>
+<title>梦鲸词汇 · 梦鲸对话副本</title>
 <style>
   :root {
     --bg: #14161d; --panel: #1d2129; --panel-2: #262b35; --line: #333a47;
@@ -130,6 +130,13 @@
   }
   .msg.user .msg-usage { text-align: right; }
   .usage-absent { text-align: center; color: var(--muted); font-size: 12px; padding: 10px 0; }
+  .thread-history { margin-bottom: 18px; }
+  .thread-history > summary { padding: 10px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
+  .thread-history-content { padding-top: 12px; }
+  .msg-summary-label { margin-bottom: 4px; color: var(--muted); font-size: 11px; }
+  .msg-summary-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg-summary-debug { margin-top: 8px; padding: 8px 10px; border-left: 2px solid var(--accent); font-size: 12px; }
+  .msg-compacted-note { color: var(--muted); font-size: 12px; }
   .regen-bar {
     display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
     margin: 4px 0 14px; padding: 10px 12px;
@@ -155,45 +162,43 @@
     background: var(--panel-2); color: var(--fg); font: inherit; line-height: 1.6;
   }
   #btn-chat-send { min-height: 46px; padding: 0 20px; }
-  /* 对话区背景：整场一张底图。cover 铺满、不变形、不重复；位置靠上，
-     因为底图是竖幅全身像，靠上才留得住脸。
-     图上压两层：先按比例压暗，再叠一层从上到下加深的渐变。
-     底图很亮，不做这两层，12px 的灰色小字（发言人、空状态提示）就糊在图里；
-     正文不受影响——消息气泡本身就是不透明面板，与底图亮暗无关。 */
-  #chat-main { position: relative; }
-  #chat-main::before {
-    content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-    background-image: var(--chat-bg, none);
-    background-size: cover;
-    background-position: center top;
-    background-repeat: no-repeat;
-    opacity: .62;
-  }
-  #chat-main::after {
-    content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-    background: linear-gradient(180deg, rgba(20,22,29,.60), rgba(20,22,29,.72) 45%, rgba(20,22,29,.88));
+  #chat-main {
+    position: relative;
+    background: radial-gradient(ellipse at 75% 0%, #17354a 0%, transparent 65%),
+      linear-gradient(160deg, #142633 0%, #101e2c 50%, #101820 100%);
   }
   #chat-thread, #chat-composer { position: relative; z-index: 1; }
-  /* 发言人名直接压在底图上，而底图某些区域（比如裙子的白色）非常亮。
-     只靠投影在 12px 小字上不够用——给一层半透明底，文字就与底图亮暗无关了。 */
   .msg-who {
     display: inline-block; padding: 1px 8px; border-radius: 999px;
     background: rgba(16,18,24,.62);
     text-shadow: 0 1px 4px rgba(0,0,0,.95);
   }
+  .assistant-name {
+    display: flex; align-items: center; gap: 8px; padding: 0;
+    background: transparent; border-radius: 0;
+  }
+  .character-avatar {
+    width: 40px; height: 40px; flex: none; object-fit: contain;
+    border: 0; background: transparent;
+  }
+  .avatar-fallback { display: grid; place-items: center; color: var(--accent); font-size: 18px; }
+  .msg-name { color: var(--fg); font-weight: 700; }
   .chat-empty { text-shadow: 0 1px 4px rgba(0,0,0,.95), 0 0 14px rgba(0,0,0,.7); }
-  /* 表情包：贴在角色气泡里，随宽度等比缩放，绝不撑破气泡。
-     写法上只定宽、高度 auto——替换元素在 max-width 生效时会按比例回算高度；
-     反过来「定高 + 百分比 max-width」会把方形图压成非等比，contain 再补出透明边。 */
+  .msg-expression { margin-top: 10px; background: transparent; border: 0; }
   .face-sticker {
-    display: block; margin-top: 10px;
-    width: 132px; height: auto; max-width: 100%;
-    border-radius: 12px;
-    background: rgba(0,0,0,.18);
+    display: block; width: 220px; height: auto; max-width: 100%;
+    border: 0; border-radius: 0; background: transparent;
   }
   .face-sticker-note { margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+  .appearance-preferences { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+  .appearance-preferences legend { padding: 0 6px; font-size: 14px; font-weight: 700; }
+  .appearance-preview { margin: 10px 0; }
+  .appearance-preview .msg-expression { min-height: 160px; }
+  .appearance-preview .face-sticker { width: 180px; max-height: 240px; object-fit: contain; object-position: left center; }
+  .preference-error { color: var(--bad) !important; }
   @media (max-width: 860px) {
-    .face-sticker { width: 104px; }
+    .face-sticker { width: 180px; max-width: 65vw; }
+    .character-avatar { width: 36px; height: 36px; }
   }
 
   /* ---------- 拼单词模式（保留） ---------- */
@@ -365,9 +370,9 @@
   <!-- ============ user 档案 ============ -->
   <dialog id="profile-dialog">
     <h2>先认识一下</h2>
-    <p class="hint">这是给鲸鱼娘看的档案。她会按你希望的方式称呼你。</p>
+    <p class="hint">这是给梦鲸看的档案。她会按你希望的方式称呼你。</p>
     <div class="field">
-      <label for="pf-name">你希望鲸鱼娘如何称呼你</label>
+      <label for="pf-name">你希望梦鲸如何称呼你</label>
       <input id="pf-name" placeholder="比如：阿澈" maxlength="20" autocomplete="off" />
     </div>
     <div class="field">
@@ -396,7 +401,7 @@
     <div class="field">
       <label for="set-mode">玩法模式</label>
       <select id="set-mode">
-        <option value="chat">对话模式（默认）· 与鲸鱼娘自由对话，按节奏出题</option>
+        <option value="chat">对话模式（默认）· 与梦鲸自由对话，按节奏出题</option>
         <option value="wordblade">拼单词模式（已遗弃的可选玩法）· 抽字母拼词闯关</option>
       </select>
     </div>
@@ -426,33 +431,45 @@
       <label for="set-restturns">休息期持续多少轮对话</label>
       <input id="set-restturns" type="number" min="1" max="100" step="1" />
     </div>
-    <div class="field">
-      <label for="set-facehost">表情图床（两个图床是同一批图，只换取图地址）</label>
-      <select id="set-facehost"></select>
-    </div>
-    <p class="hint" id="facehost-note"></p>
+    <fieldset class="appearance-preferences">
+      <legend>个性偏好</legend>
+      <div class="field">
+        <label for="set-face-style">表情风格</label>
+        <select id="set-face-style" aria-describedby="face-style-help face-style-status"></select>
+      </div>
+      <p class="hint" id="face-style-help">选择后立即应用。Q版和立绘版使用相同的头像。</p>
+      <div class="appearance-preview" id="face-style-preview"></div>
+      <p class="hint preference-error" id="face-style-status" role="status"></p>
+    </fieldset>
 
     <hr style="border:0;border-top:1px solid var(--line);margin:16px 0" />
 
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" id="set-limits-enable" style="width:auto" />
-        <span>启用上下文与渲染限额（长对话不再无脑全量发送）</span>
+        <span>启用正文裁剪与显示限额</span>
       </label>
     </div>
     <div class="field">
-      <label for="set-renderlimit">界面渲染消息数（只影响显示）</label>
+      <label for="set-renderlimit">界面显示消息数（更早消息可展开）</label>
       <input id="set-renderlimit" type="number" min="10" max="2000" step="10" />
     </div>
     <div class="field">
-      <label for="set-historylimit">发送的历史消息上限（条）</label>
+      <label for="set-historylimit">保留正文消息数（一次问答为两条）</label>
       <input id="set-historylimit" type="number" min="2" max="500" step="2" />
     </div>
     <div class="field">
       <label for="set-maxcontext">最大上下文（token，估算）</label>
       <input id="set-maxcontext" type="number" min="1000" max="1000000" step="1000" />
     </div>
+    <p class="hint">超限时较早正文仅保留回合小总结。关闭裁剪不会恢复已删除正文；小总结仍计入上下文。</p>
     <p class="hint" id="limits-note"></p>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="set-debug-summary" style="width:auto" />
+        <span>调试模式：显示每轮小总结</span>
+      </label>
+    </div>
 
     <hr style="border:0;border-top:1px solid var(--line);margin:16px 0" />
 
@@ -460,6 +477,24 @@
       <label for="preset">接口预设</label>
       <select id="preset"></select>
     </div>
+    <div class="field">
+      <label for="set-provider">接口类型</label>
+      <select id="set-provider">
+        <option value="deepseek">DeepSeek</option>
+        <option value="openai">OpenAI</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="ollama">Ollama</option>
+        <option value="custom">其他兼容接口</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="set-cache-mode">请求策略</label>
+      <select id="set-cache-mode">
+        <option value="auto">自动</option>
+        <option value="standard">标准请求</option>
+      </select>
+    </div>
+    <p class="hint">自动按接口能力附加缓存或会话路由参数；标准请求不附加这些参数。</p>
     <div class="field">
       <label for="endpoint">接口地址（填 base URL 或完整路径都行）</label>
       <input id="endpoint" placeholder="https://api.deepseek.com/v1" />
@@ -488,7 +523,7 @@
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" id="usePrefill" style="width:auto" />
-        <span>使用预填充（把模型锁进既定输出结构；端点不支持会自动降级）</span>
+        <span>使用 JSON 回复预填充（仅拼单词模式）</span>
       </label>
     </div>
     <div class="actions">
