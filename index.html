@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>梦鲸词汇 · 梦鲸对话副本</title>
+<title>梦鲸词汇 · 每天一点点</title>
 <style>
   :root {
     --bg: #14161d; --panel: #1d2129; --panel-2: #262b35; --line: #333a47;
@@ -13,16 +13,17 @@
     --env: #7fb3d5; --action: #c9a0dc; --thought: #e0b184; --speech: #9fe0b8;
   }
   * { box-sizing: border-box; }
+  .study-note { padding:12px 16px; border-radius:12px; background:#efecf5; color:#514570; font-size:13px; line-height:1.7; }
+  .hidden { display: none !important; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .meta { color: var(--muted); font-size: 12px; line-height: 1.7; }
   html, body { margin: 0; padding: 0; }
   body {
     background: var(--bg); color: var(--fg);
     font-family: ui-rounded, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
     min-height: 100dvh; display: flex; flex-direction: column;
   }
-  /* 对话模式：把 body 高度锁死在视口，滚轮才会落在对话区内部而不是整页。
-     只设 min-height 的话，内容一高 body 就跟着长，内层容器永远撑到内容高度，
-     overflow-y: auto 就形同虚设。拼单词模式仍走整页滚动，所以用类名限定作用域。 */
-  body.chat-mode { height: 100dvh; overflow: hidden; }
+  body.chat-mode { min-height: 0; height: 100dvh; height: var(--visual-height, 100dvh); overflow: hidden; }
   header {
     display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
     padding: 10px 14px; border-bottom: 1px solid var(--line);
@@ -95,11 +96,11 @@
   .msg-del-yes, .msg-del-no { padding: 2px 6px; font-size: 11px; }
   .msg-del-yes { border-color: var(--bad); color: var(--bad); background: transparent; }
   /* 窄屏：侧栏收起为抽屉，用表头按钮切换 */
-  @media (max-width: 860px) {
-    #session-side { position: absolute; z-index: 8; height: 100%; transform: translateX(-100%); transition: transform .2s; }
-    #view-chat.side-open #session-side { transform: none; box-shadow: 12px 0 32px rgba(0,0,0,.5); }
-    #view-chat { position: relative; overflow: hidden; }
-  }
+
+  html[data-side-panel="drawer"] #session-side { position: absolute; z-index: 8; height: 100%; transform: translateX(-100%); transition: transform .2s; }
+  html[data-side-panel="drawer"] #view-chat.side-open #session-side { transform: none; box-shadow: 12px 0 32px rgba(0,0,0,.5); }
+  html[data-side-panel="drawer"] #view-chat { position: relative; overflow: hidden; }
+
   .msg-who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
   .msg.user { text-align: right; }
   .msg.user .msg-who { text-align: right; }
@@ -153,7 +154,7 @@
   .thinking-dot { color: var(--muted); }
   #chat-composer {
     border-top: 1px solid var(--line); background: var(--panel);
-    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    padding: 12px 14px calc(12px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
   }
   .composer-inner { width: min(100%, 780px); margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
   #chat-input {
@@ -164,8 +165,10 @@
   #btn-chat-send { min-height: 46px; padding: 0 20px; }
   #chat-main {
     position: relative;
-    background: radial-gradient(ellipse at 75% 0%, #17354a 0%, transparent 65%),
-      linear-gradient(160deg, #142633 0%, #101e2c 50%, #101820 100%);
+    background-color:#101e2c;
+    background-image:linear-gradient(90deg,rgba(13,24,40,.48),rgba(13,24,40,.18)),var(--scene-current);
+    background-position:center;
+    background-size:cover;
   }
   #chat-thread, #chat-composer { position: relative; z-index: 1; }
   .msg-who {
@@ -196,64 +199,20 @@
   .appearance-preview .msg-expression { min-height: 160px; }
   .appearance-preview .face-sticker { width: 180px; max-height: 240px; object-fit: contain; object-position: left center; }
   .preference-error { color: var(--bad) !important; }
-  @media (max-width: 860px) {
-    .face-sticker { width: 180px; max-width: 65vw; }
-    .character-avatar { width: 36px; height: 36px; }
-  }
 
-  /* ---------- 拼单词模式（保留） ---------- */
-  main { flex: 1; width: min(100%, 1180px); margin: 0 auto; padding: 14px 14px 28px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
-  .panes { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 14px; }
-  @media (min-width: 900px) { .panes { grid-template-columns: 1fr 1fr; } }
-  .pane { display: flex; flex-direction: column; min-height: 0; }
-  .pane > h2 { margin: 0 0 10px; font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
-  .pane-body { flex: 1; min-height: 0; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; }
-  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-  .tag { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
-  .tag.hot { background: #3a2f22; color: var(--warn); }
-  .scene { font-size: 15px; line-height: 1.95; white-space: pre-wrap; text-align: justify; }
-  .objective { margin-top: 12px; font-weight: 800; color: var(--accent); }
-  .objective span { color: var(--muted); font-weight: 500; font-size: 13px; }
-  .narrative { font-size: 15px; line-height: 1.95; white-space: pre-wrap; text-align: justify; }
-  .placeholder { color: var(--muted); font-size: 14px; line-height: 1.8; }
-  .verdict-title { font-size: 15px; font-weight: 800; margin-bottom: 8px; }
-  .verdict-pane.ok .verdict-title { color: var(--ok); }
-  .verdict-pane.bad .verdict-title { color: var(--bad); }
-  .feedback { margin: 10px 0 4px; font-weight: 700; font-size: 14px; }
-  .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0; line-height: 1.7; }
-  .verdict-pane.ok > h2 { color: var(--ok); }
-  .verdict-pane.bad > h2 { color: var(--bad); }
-  .verdict-pane.ok .feedback { color: var(--ok); }
-  .verdict-pane.bad .feedback { color: var(--bad); }
-  .wordline {
-    min-height: 52px; display: flex; align-items: center; gap: 6px;
-    padding: 10px 12px; margin-bottom: 12px; background: var(--panel-2);
-    border: 1px dashed var(--line); border-radius: 12px;
-    font-size: 26px; letter-spacing: 4px; font-weight: 800;
-  }
-  .wordline.empty { color: var(--muted); font-size: 14px; letter-spacing: 1px; font-weight: 500; }
-  .tiles { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-  .tile {
-    width: 46px; height: 52px; font-size: 22px; font-weight: 800;
-    display: grid; place-items: center; background: var(--tile);
-    border: 1px solid var(--line); border-radius: 10px; text-transform: lowercase;
-  }
-  .tile.sel { background: var(--tile-sel); border-color: var(--accent); opacity: .55; }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  .hidden { display: none !important; }
-  #gameover { border-color: var(--bad); }
-  #gameover h2 { margin: 0 0 8px; color: var(--bad); font-size: 17px; }
+  html[data-layout="mobile"] .face-sticker { width: 180px; max-width: 65vw; }
+  html[data-layout="mobile"] .character-avatar { width: 36px; height: 36px; }
+
 
   /* ---------- 提示与弹窗 ---------- */
-  #toast, #chat-toast {
+  #chat-toast {
     position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
     background: #2b3340; border: 1px solid var(--line); color: var(--fg);
     padding: 10px 16px; border-radius: 12px; font-size: 13px; max-width: 92vw;
     z-index: 20; box-shadow: 0 10px 30px rgba(0,0,0,.4);
   }
   #chat-toast { bottom: 92px; }
-  #toast.err, #chat-toast.err { border-color: var(--bad); color: #ffd9d7; }
+  #chat-toast.err { border-color: var(--bad); color: #ffd9d7; }
   dialog {
     border: 1px solid var(--line); border-radius: 16px; background: var(--panel);
     color: var(--fg); width: min(94vw, 520px); padding: 18px;
@@ -272,10 +231,518 @@
   table.stats th:first-child, table.stats td:first-child { text-align: left; }
   table.stats th { color: var(--muted); font-weight: 600; font-size: 12px; }
   table.stats tr.active td { color: var(--accent); font-weight: 700; }
+  .library-sections { margin-bottom:20px; }
+  .mistake-rules { padding:18px 20px; background:#eee9f7; border-radius:14px; margin-bottom:20px; }
+  .mistake-rules strong { font-size:15px; }
+  .mistake-rules p { font-size:13px; line-height:1.8; margin:8px 0 0; color:var(--muted); }
+  .mistake-controls { display:flex; gap:12px; margin:20px 0; flex-wrap:wrap; }
+  .mistake-controls .word-search { flex:1; min-width:180px; }
+  .mistake-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+  .mistake-card { min-width:0; overflow-wrap:anywhere; }
+  .mistake-meta { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+  .mistake-meta strong { font-size:20px; }
+  .mistake-card h2 { font-size:17px; line-height:1.6; }
+  .mistake-card p { font-size:13px; line-height:1.8; }
+  .mistake-detail { margin:18px 0; }
+  .mistake-detail summary { cursor:pointer; color:var(--accent); font-size:13px; min-height:44px; display:flex; align-items:center; gap:8px; }
+  .mistake-detail summary::before { content:'＋'; }
+  .mistake-detail[open] summary::before { content:'−'; }
+  .mistake-answer { color:var(--bad); }
+  .mistake-saved { color:var(--accent); font-size:12px; }
+  .quick-counts { flex-wrap:wrap; }
+  #btn-tutorial { margin:4px 0 18px; min-height:44px; }
+  .tour-overlay { position:fixed; inset:0; z-index:100; pointer-events:none; }
+  .tour-spotlight { position:fixed; border:2px solid #bba4f0; border-radius:12px; box-shadow:0 0 0 9999px #211a3c9e; }
+  .tour-spotlight[hidden] { display:none; }
+  .tour-shield { position:fixed; pointer-events:auto; }
+  .tour-centered .tour-shield:first-of-type { background:#211a3c9e; }
+  .tour-centered { background:#211a3c9e; }
+  .tour-card { position:fixed; pointer-events:auto; background:#fffdf9; color:var(--fg); border:1px solid #e1d6f1; border-radius:22px; box-shadow:0 20px 70px #211a3c40; padding:18px; box-sizing:border-box; overflow:auto; overscroll-behavior:contain; }
+  .tour-card:focus { outline:none; }
+  .tour-card button:focus-visible { outline:3px solid #a38ad5; outline-offset:3px; }
+  .tour-top { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; color:var(--muted); }
+  .tour-top button { padding:4px 8px; min-height:40px; font-size:12px; }
+  .tour-body { display:flex; gap:14px; align-items:center; padding:14px 0 20px; }
+  .tour-face { width:104px; height:128px; object-fit:contain; flex:none; }
+  .tour-speech { min-width:0; }
+  .tour-speech h2 { margin:0 0 10px; font-size:20px; line-height:1.5; }
+  .tour-speech p { margin:0; font-size:14px; line-height:1.85; }
+  .tour-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .tour-actions button { min-height:44px; }
+  .tour-actions .primary { margin-left:auto; }
+  .tour-instruction { font-size:13px; color:var(--accent); font-weight:600; }
+  html[data-layout="mobile"] .mistake-list { grid-template-columns:1fr; }
+  html[data-layout="mobile"] .mistake-controls > button { width:100%; }
+  @media (max-width:700px) { .mistake-list { grid-template-columns:1fr; } }
+  @media (max-width:440px) {
+    .tour-card { padding:14px; border-radius:18px; }
+    .tour-face { width:76px; height:106px; }
+    .tour-body { gap:10px; }
+    .tour-speech h2 { font-size:18px; }
+    .tour-speech p { font-size:13px; }
+  }
+  .word-row-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .speech-button { display:inline-flex; align-items:center; justify-content:center; gap:4px; min-height:36px; padding:6px 10px; font-size:13px; color:var(--accent); background:var(--panel-2); white-space:nowrap; }
+  .speech-button[aria-pressed="true"] { outline:2px solid var(--accent); }
+  .speech-settings { margin:18px 0; padding:14px; border:1px solid var(--line); border-radius:14px; min-width:0; }
+  .speech-settings legend { padding:0 6px; font-weight:700; }
+  .speech-settings input[type="range"] { width:100%; padding:0; min-height:40px; }
+  .voice-preview-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .voice-preview-actions button { min-width:0; min-height:44px; white-space:normal; }
+  .speech-notice, .selection-speech { position:fixed; z-index:11000; bottom:calc(84px + env(safe-area-inset-bottom, 0px)); left:50%; transform:translateX(-50%); max-width:calc(100vw - 24px); width:max-content; padding:10px 14px; border:1px solid var(--line); border-radius:12px; background:var(--panel); color:var(--ink); box-shadow:0 4px 20px #0002; }
+  .selection-speech { display:flex; gap:8px; align-items:center; }
+  .selection-speech[hidden], .speech-notice[hidden] { display:none; }
+  .option-with-speech { display:flex; align-items:stretch; gap:6px; min-width:0; }
+  .option-with-speech .answer-option { flex:1; min-width:0; }
+  .word-example > .speech-button, .answer-feedback > .speech-button, .para > .speech-button, .exercise-stem + .speech-button { margin:6px 4px 8px 0; }
+</style>
+
+<style>
+  :root { --bg:#f7f6f2; --panel:#fff; --panel-2:#f0eef7; --line:#dfdce9; --fg:#252638; --muted:#696779; --accent:#6c59b5; --ok:#27785d; --bad:#b6424d; --warn:#89612e; --tile:#eeebf6; --tile-sel:#c9beed; --env:#366b80; --action:#765594; --thought:#856438; --speech:#305d4c; }
+  body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  button, input, select, textarea { font:inherit; }
+  button { transition:background .15s,border-color .15s; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; padding:11px 20px; font-weight:600; }
+  :focus-visible { outline:3px solid #9f8bdb; outline-offset:3px; }
+  header { flex:none; padding:16px 28px; background:#fdfcf9; gap:12px 24px; }
+  .brand { color:var(--fg); font-size:24px; font-weight:750; text-decoration:none; letter-spacing:2px; white-space:nowrap; }
+  .brand span { display:block; font-size:9px; letter-spacing:4px; color:var(--accent); margin-top:2px; }
+  .main-nav { display:flex; gap:4px; }
+  .main-nav button { background:transparent; border-color:transparent; padding:10px 15px; }
+  .main-nav .active { color:var(--accent); background:#eeebf7; font-weight:700; }
+  #hud-chat-group { order:5; flex-basis:100%; font-size:11px; padding-top:7px; border-top:1px solid var(--line); }
+  #view-learn { width:min(1120px,100%); padding:44px 28px 32px; margin:0 auto; }
+  .study-hero { display:flex; align-items:center; justify-content:space-between; gap:24px; padding-bottom:35px; }
+  .eyebrow { text-transform:uppercase; letter-spacing:.15em; font-size:11px; font-weight:650; color:var(--accent); margin:0 0 15px; }
+  .study-hero h1 { font-size:clamp(30px,4vw,46px); font-weight:650; letter-spacing:-.035em; line-height:1.38; white-space:pre-line; margin:0 0 18px; }
+  .hero-copy { font-size:14px; color:var(--muted); line-height:1.9; max-width:520px; margin:0; }
+  .study-mascot { width:178px; height:178px; object-fit:contain; background:#e9e3f5; border-radius:50%; border:10px solid #f0ecf8; margin-right:40px; }
+  .study-metrics { display:grid; grid-template-columns:repeat(4,1fr); padding:22px 0; border-block:1px solid var(--line); margin-bottom:30px; }
+  .study-metric { display:flex; flex-direction:column; gap:7px; padding:0 28px; border-right:1px solid var(--line); }
+  .study-metric:first-child { padding-left:0; }
+  .study-metric:last-child { border:0; }
+  .study-metric strong { font-size:29px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .study-metric span { color:var(--muted); font-size:12px; }
+  .study-grid { display:grid; grid-template-columns:minmax(0,1fr) 270px; gap:24px; align-items:start; }
+  .practice-card { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:30px; box-shadow:0 4px 18px #28243e04; }
+  .practice-card h2 { font-size:23px; line-height:1.6; font-weight:600; margin:16px 0 20px; white-space:pre-line; overflow-wrap:anywhere; }
+  .practice-meta { display:flex; flex-wrap:wrap; align-items:center; gap:12px; color:var(--muted); font-size:12px; }
+  .pill { background:#eee9f8; padding:5px 10px; border-radius:6px; color:var(--accent); font-weight:600; }
+  .exercise-hint { background:#f7f5fb; border-radius:8px; padding:12px; line-height:1.7; font-size:13px; color:#656078; }
+  .answer-label { display:block; margin:24px 0 10px; font-size:12px; color:var(--muted); }
+  .answer-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .answer-option { text-align:left; background:white; padding:14px; border-radius:9px; overflow-wrap:anywhere; }
+  .answer-option.selected { border-color:var(--accent); background:#f0ebfb; color:#4b3988; }
+  .answer-option.answer-correct { border-color:var(--ok); background:#edf8f2; color:var(--ok); opacity:1; }
+  .answer-input, .word-search { width:100%; border:1px solid var(--line); background:#fff; padding:14px; border-radius:9px; color:var(--fg); }
+  textarea.answer-input { min-height:110px; resize:vertical; }
+  .practice-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:20px; }
+  .practice-actions .ghost { font-size:12px; }
+  .practice-footer { display:flex; justify-content:space-between; border-top:1px solid #eeeaf3; padding-top:16px; margin-top:24px; }
+  .practice-footer button { border-color:transparent; font-size:12px; padding:5px 0; }
+  .hint-box { background:#fbf5e8; color:#775b28; border-radius:9px; padding:14px; font-size:13px; line-height:1.8; }
+  .answer-feedback { background:#fcf5ec; padding:18px; margin-top:20px; border-radius:10px; line-height:1.8; font-size:14px; }
+  .answer-feedback.success { background:#edf7f0; color:#286249; }
+  .answer-feedback p { margin:8px 0 0; white-space:pre-line; }
+  .reference-answer { font-size:20px; font-weight:650; }
+  .audio-play { background:#f0ebfb; color:var(--accent); padding:12px 20px; }
+  .study-sidebar { padding:24px; border:1px solid var(--line); border-radius:16px; background:#f0edf5; }
+  .study-sidebar h2 { font-size:17px; margin:0 0 24px; font-weight:600; }
+  .filter-toggle { display:none; }
+  .study-filter-fields[hidden] { display:none; }
+  .study-filter { display:block; color:var(--muted); font-size:12px; margin-bottom:17px; }
+  .study-filter select { display:block; width:100%; margin-top:8px; border:1px solid var(--line); border-radius:8px; padding:10px; background:white; color:var(--fg); }
+  .study-sidebar .muted { font-size:12px; line-height:1.8; }
+  .filter-apply { width:100%; background:#fff; font-size:12px; padding:12px 5px; }
+  .bank-note { font-size:11px; text-align:center; color:var(--muted); margin:20px 0 0; }
+  .notebook { margin-top:40px; }
+  .notebook-heading { display:flex; justify-content:space-between; align-items:center; gap:20px; }
+  .notebook h2 { font-size:21px; font-weight:600; }
+  .word-search { width:240px; font-size:12px; padding:10px 12px; }
+  .word-results { margin-top:12px; border-top:1px solid var(--line); }
+  .word-results > .muted { padding:20px 0; font-size:14px; }
+  .word-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 0; border-bottom:1px solid var(--line); }
+  .word-row p { margin:7px 0 0; font-size:12px; }
+  .favorite { font-size:12px; white-space:nowrap; }
+  .learning-tools { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:28px; font-size:12px; }
+  .study-error { color:var(--bad); background:#fff0ef; padding:15px; border-radius:9px; font-size:13px; line-height:1.8; }
+  #chat-practice { width:350px; flex:none; padding:22px 16px; border-left:1px solid var(--line); overflow-y:auto; background:#f0edf5; }
+  #chat-practice .practice-card { padding:20px; }
+  #chat-practice .exercise-stem { font-size:18px; }
+  #chat-practice .answer-options { grid-template-columns:1fr; }
+  #chat-practice .practice-actions button { font-size:12px; padding:9px 12px; }
+  .chat-practice-title { font-size:14px; color:var(--accent); font-weight:600; margin:0 0 18px; }
+  #session-side, .side-head { background:#f1eff5; }
+  #session-side { width:200px; }
+  .side-item { border-color:var(--line); }
+  .side-item.active { background:#e9e3f5; }
+  .msg.user .msg-body { background:#eae3f6; border-color:#d9cfe9; }
+  .qcard { background:#f6f3fc; }
+  #chat-composer { background:var(--bg); }
+  #chat-input { background:#fff; color:var(--fg); }
+  .dialog-close { float:right; border:0; font-size:24px; line-height:1; background:transparent; }
+  dialog { background:var(--panel); border:1px solid var(--line); color:var(--fg); max-height:88dvh; }
+  dialog::backdrop { background:#28243e66; backdrop-filter:blur(3px); }
+  #chat-toast { background:#292538; color:#fff; }
+  .practice-card, .study-sidebar, .study-filter, .word-row > div { min-width:0; }
+  .study-filter select { min-width:0; max-width:100%; }
+  .word-row, .msg-body, .qcard, .answer-feedback, .study-error { overflow-wrap:anywhere; }
+  #chat-input { min-width:0; resize:none; }
+  #chat-main .msg-name { color:#f4efff; }
+  #chat-main .msg-who, #chat-main .msg-usage, #chat-main .chat-empty { color:#c5cbd6; }
+  #chat-overlay { position:absolute; inset:0; z-index:7; border:0; border-radius:0; background:#25263866; }
+  #chat-overlay[hidden] { display:none; }
+  #chat-practice { overscroll-behavior:contain; }
+  dialog { overscroll-behavior:contain; overflow-y:auto; }
+
+  html[data-side-panel="docked"] #btn-side { display:none; }
+
+  html[data-practice-panel="docked"] #btn-chat-practice { display:none; }
+
+  html[data-practice-panel="drawer"] #chat-practice { display:none; position:absolute; right:0; top:0; bottom:0; z-index:9; width:min(370px,calc(100% - 40px)); box-shadow:-8px 0 30px #29253820; }
+  html[data-practice-panel="drawer"] #view-chat { position:relative; }
+  html[data-practice-panel="drawer"] #view-chat.practice-open #chat-practice { display:block; }
+
+
+  html[data-layout="mobile"] button { min-height:44px; }
+  html[data-layout="mobile"] .answer-input, html[data-layout="mobile"] .word-search, html[data-layout="mobile"] .study-filter select, html[data-layout="mobile"] .field input, html[data-layout="mobile"] .field select, html[data-layout="mobile"] .field textarea { font-size:16px; min-height:44px; }
+  html[data-layout="mobile"] .study-grid { grid-template-columns:minmax(0,1fr); gap:16px; }
+  html[data-layout="mobile"] .study-sidebar { grid-row:1; padding:0; overflow:hidden; }
+  html[data-layout="mobile"] .study-sidebar h2 { display:none; }
+  html[data-layout="mobile"] .filter-toggle { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; width:100%; min-height:52px; border:0; border-radius:0; background:transparent; text-align:left; padding:12px 16px; color:var(--accent); font-size:14px; font-weight:600; }
+  html[data-layout="mobile"] .filter-toggle::after { content:'＋'; font-size:18px; }
+  html[data-layout="mobile"] .filter-toggle[aria-expanded="true"]::after { content:'−'; }
+  html[data-layout="mobile"] .filter-summary { flex:1; font-size:11px; font-weight:400; color:var(--muted); text-align:right; }
+  html[data-layout="mobile"] .study-filter-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; padding:4px 16px 16px; }
+  html[data-layout="mobile"] .study-filter { margin:0; }
+  html[data-layout="mobile"] .study-filter-fields > .muted, html[data-layout="mobile"] .filter-apply, html[data-layout="mobile"] .bank-note { grid-column:1/-1; margin:0; }
+  html[data-layout="mobile"] #session-side { width:min(320px,calc(100% - 40px)); visibility:hidden; padding-bottom:var(--safe-area-inset-bottom, env(safe-area-inset-bottom)); }
+  html[data-layout="mobile"] #view-chat.side-open #session-side { visibility:visible; }
+  html[data-layout="mobile"] #chat-practice { padding-bottom:calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))); }
+  html[data-layout="mobile"] .side-head { z-index:1; }
+  html[data-layout="mobile"] .side-new, html[data-layout="mobile"] .side-del, html[data-layout="mobile"] .side-confirm button { min-height:44px; min-width:44px; }
+  html[data-layout="mobile"] .side-confirm { flex-wrap:wrap; justify-content:center; max-width:140px; }
+  html[data-layout="mobile"] .side-main { min-height:64px; }
+
+
+  html[data-layout="mobile"] header { display:grid; grid-template-columns:minmax(0,1fr) repeat(3,44px); padding:calc(8px + var(--safe-area-inset-top, env(safe-area-inset-top))) max(12px,var(--safe-area-inset-right, env(safe-area-inset-right))) 8px max(12px,var(--safe-area-inset-left, env(safe-area-inset-left))); gap:6px 8px; }
+  html[data-layout="mobile"] .brand { font-size:19px; }
+  html[data-layout="mobile"] .brand { grid-area:1/1; }
+  html[data-layout="mobile"] header .spacer { display:none; }
+  html[data-layout="mobile"] .main-nav { grid-area:2/1/3/-1; }
+  html[data-layout="mobile"] .main-nav button { flex:1; min-height:44px; font-size:14px; padding:10px 8px; }
+  html[data-layout="mobile"] header > button { min-height:44px; font-size:12px; padding:6px 4px; }
+  html[data-layout="mobile"] #btn-stats { grid-area:1/2; }
+  html[data-layout="mobile"] #btn-side { grid-area:3/1/4/3; }
+  html[data-layout="mobile"] #btn-chat-practice { grid-area:3/3/4/5; }
+  html[data-layout="mobile"] #hud-chat-group { display:none; }
+  html[data-layout="mobile"] #view-learn { padding:26px max(16px,var(--safe-area-inset-right, env(safe-area-inset-right))) calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))) max(16px,var(--safe-area-inset-left, env(safe-area-inset-left))); }
+  html[data-layout="mobile"] .study-hero { position:relative; display:block; padding-bottom:24px; }
+  html[data-layout="mobile"] .study-hero h1 { font-size:28px; padding-right:75px; }
+  html[data-layout="mobile"] .hero-copy { font-size:12px; }
+  html[data-layout="mobile"] .study-mascot { position:absolute; top:28px; right:0; width:72px; height:72px; border-width:4px; margin:0; }
+  html[data-layout="mobile"] .study-metrics { margin-bottom:20px; padding:18px 0; }
+  html[data-layout="mobile"] .study-metric { min-width:0; padding:0 10px; }
+  html[data-layout="mobile"] .study-metric strong { font-size:24px; }
+  html[data-layout="mobile"] .study-metric span { font-size:11px; line-height:1.6; }
+  html[data-layout="mobile"] .practice-card { padding:18px; border-radius:14px; }
+  html[data-layout="mobile"] .practice-card h2 { font-size:20px; }
+  html[data-layout="mobile"] .answer-options { grid-template-columns:1fr; }
+  html[data-layout="mobile"] .answer-option { min-height:48px; font-size:15px; }
+  html[data-layout="mobile"] .practice-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  html[data-layout="mobile"] .practice-actions button, html[data-layout="mobile"] .practice-footer button, html[data-layout="mobile"] .favorite, html[data-layout="mobile"] .learning-tools button, html[data-layout="mobile"] .audio-play { min-height:44px; }
+  html[data-layout="mobile"] .practice-actions .primary { grid-column:1/-1; }
+  html[data-layout="mobile"] .practice-footer { gap:12px; padding-top:10px; margin-top:16px; }
+  html[data-layout="mobile"] .practice-footer button { padding:4px; }
+  html[data-layout="mobile"] .answer-feedback { padding:14px; }
+  html[data-layout="mobile"] .notebook-heading { align-items:start; flex-direction:column; gap:6px; }
+  html[data-layout="mobile"] .word-search { width:100%; }
+  html[data-layout="mobile"] .word-row { align-items:start; gap:8px; }
+  html[data-layout="mobile"] .word-row p { line-height:1.7; }
+  html[data-layout="mobile"] .favorite { flex:none; padding:8px; }
+  html[data-layout="mobile"] .learning-tools { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  html[data-layout="mobile"] .learning-tools > .muted { grid-column:1/-1; line-height:1.8; }
+  html[data-layout="mobile"] .eyebrow { font-size:9px; }
+  html[data-layout="mobile"] #chat-thread { padding:12px max(12px,var(--safe-area-inset-right, env(safe-area-inset-right))) 8px max(12px,var(--safe-area-inset-left, env(safe-area-inset-left))); }
+  html[data-layout="mobile"] #chat-composer { padding:8px max(12px,var(--safe-area-inset-right, env(safe-area-inset-right))) calc(8px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))) max(12px,var(--safe-area-inset-left, env(safe-area-inset-left))); }
+  html[data-layout="mobile"] .composer-inner { gap:8px; }
+  html[data-layout="mobile"] #chat-input { font-size:16px; padding:10px 12px; }
+  html[data-layout="mobile"] #btn-chat-send { min-width:64px; padding:0 12px; }
+  html[data-layout="mobile"] .msg-del { opacity:1; }
+  html[data-layout="mobile"] .msg-del-btn { width:44px; height:44px; background:transparent; border:0; color:#c5cbd6; }
+  html[data-layout="mobile"] .msg-del-yes, html[data-layout="mobile"] .msg-del-no { min-height:44px; min-width:44px; }
+  html[data-layout="mobile"] .msg.assistant .msg-who { padding-right:48px; min-height:44px; }
+  html[data-layout="mobile"] .msg.user .msg-who { margin-bottom:20px; }
+  html[data-layout="mobile"] .msg.assistant .msg-body { padding:12px; }
+  html[data-layout="mobile"] .regen-text { min-width:0; flex-basis:100%; }
+  html[data-layout="mobile"] dialog { margin:auto 0 0; width:100%; max-width:none; max-height:calc(var(--visual-height,100dvh) - var(--safe-area-inset-top, env(safe-area-inset-top)) - 12px); padding:20px max(16px,var(--safe-area-inset-right, env(safe-area-inset-right))) calc(20px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))) max(16px,var(--safe-area-inset-left, env(safe-area-inset-left))); border-radius:20px 20px 0 0; }
+  html[data-layout="mobile"] #settings { scroll-padding-bottom:144px; }
+  html[data-layout="mobile"] .dialog-close { min-width:44px; min-height:44px; position:sticky; top:0; background:var(--panel); z-index:1; }
+  html[data-layout="mobile"] .field input[type="checkbox"] { min-height:24px; min-width:24px; width:24px; height:24px; flex:none; }
+  html[data-layout="mobile"] .field label:has(input[type="checkbox"]) { min-height:44px; line-height:1.8; }
+  html[data-layout="mobile"] dialog .actions > button { min-height:44px; flex:1; }
+  html[data-layout="mobile"] .settings-actions { position:sticky; bottom:-20px; background:var(--panel); border-top:1px solid var(--line); padding:12px 0; }
+  html[data-layout="mobile"] #btn-clear-save { flex-basis:100%; }
+  html[data-layout="mobile"] .appearance-preferences { min-width:0; padding:12px; }
+  html[data-layout="mobile"] body.chat-mode.keyboard-open .brand, html[data-layout="mobile"] body.chat-mode.keyboard-open .main-nav, html[data-layout="mobile"] body.chat-mode.keyboard-open #btn-stats { display:none; }
+  html[data-layout="mobile"] body.chat-mode.keyboard-open #btn-side { grid-area:1/1/2/3; }
+  html[data-layout="mobile"] body.chat-mode.keyboard-open #btn-chat-practice { grid-area:1/3/2/5; }
+
+  @media (max-height:500px) and (min-width:681px) and (max-width:1100px) {
+    header { padding:6px max(12px,var(--safe-area-inset-right, env(safe-area-inset-right))) 6px max(12px,var(--safe-area-inset-left, env(safe-area-inset-left))); gap:8px; }
+    #hud-chat-group { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition:none!important; scroll-behavior:auto!important; } }
+  #view-learn { padding-top:30px; }
+  .main-nav button { display:flex; align-items:center; justify-content:center; gap:7px; }
+  .main-nav button > span { font-size:19px; line-height:1; }
+  .page-heading { position:relative; margin:0 0 28px; min-height:80px; }
+  .page-heading h1 { font-size:30px; font-weight:650; line-height:1.4; margin:0 0 10px; padding-right:80px; letter-spacing:-.025em; }
+  .page-heading p { margin:0; font-size:13px; line-height:1.7; }
+  .today-avatar { position:absolute; right:6px; top:-8px; width:90px; height:90px; object-fit:contain; }
+  .scene-hero { min-height:220px; padding:32px 34px; border-radius:22px; overflow:hidden; background-color:#eee9df; background-image:linear-gradient(90deg,rgba(253,250,244,.96),rgba(253,250,244,.72) 40%,transparent 68%),var(--scene-day); background-size:cover; background-position:center 57%; border:1px solid #e7e1d8; }
+  .scene-hero h1 { padding:0; }
+  .scene-hero .scene-greeting { margin-top:28px; max-width:270px; color:#635d71; font-size:13px; }
+  .scene-hero .today-avatar { width:72px; height:72px; right:20px; top:16px; padding:3px; border-radius:50%; background:#fff8; }
+  .illustrated-heading { min-height:100px; padding:12px 130px 0 0; }
+  .illustrated-heading h1 { padding-right:0; }
+  .heading-anchor { position:absolute; right:6px; top:-6px; width:120px; height:108px; object-fit:contain; pointer-events:none; }
+  .surface { border:1px solid var(--line); background:var(--panel); border-radius:20px; padding:28px; }
+  .surface h2 { font-size:19px; font-weight:600; margin:0; }
+  .section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .text-button { border:0; background:transparent; color:var(--accent); font-size:13px; min-height:44px; }
+  .dashboard-grid { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); gap:22px; }
+  .dashboard-grid > * { min-width:0; }
+  .plan-card { background:linear-gradient(135deg,#fff 50%,#f0eafa); }
+  .plan-topic { font-size:13px; color:var(--muted); margin:6px 0 24px; }
+  .plan-metrics { display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+  .plan-metrics .muted { font-size:13px; }
+  .plan-number { margin:8px 0 14px; }
+  .plan-number strong { font-size:40px; font-weight:600; }
+  .plan-number span { font-size:14px; color:var(--muted); }
+  progress { display:block; width:100%; height:6px; appearance:none; border:0; border-radius:10px; overflow:hidden; background:#eae6f1; color:var(--accent); }
+  progress::-webkit-progress-bar { background:#eae6f1; }
+  progress::-webkit-progress-value { background:var(--accent); border-radius:10px; }
+  progress::-moz-progress-bar { background:var(--accent); border-radius:10px; }
+  .plan-start { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:30px; }
+  .plan-start button { min-height:48px; padding:12px; font-size:14px; }
+  button.secondary { background:#f0ebf8; color:var(--accent); border-color:#ddd3ee; min-height:44px; }
+  .plan-footnote { font-size:11px; color:var(--muted); line-height:1.8; margin:18px 0 0; }
+  .plan-editor { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:20px 0; border-bottom:1px solid var(--line); margin-top:20px; }
+  .plan-editor > :first-child, .plan-editor > button { grid-column:1/-1; }
+  .plan-editor .study-filter { margin:0; }
+  .bank-picker { margin:0 0 24px; padding:16px; border:1px solid var(--line); border-radius:14px; }
+  .bank-picker .filter-tabs { display:flex; align-items:center; gap:10px; margin:0; flex-wrap:wrap; }
+  .bank-picker button { min-height:44px; min-width:60px; }
+  .bank-source { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.8; overflow-wrap:anywhere; }
+  .bank-source summary { cursor:pointer; }
+  .bank-source pre { white-space:pre-wrap; font:inherit; }
+  .word-detail > a { display:block; margin:12px 0; font-size:12px; }
+  .week-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; margin:30px 0 20px; }
+  .week-day { text-align:center; font-size:11px; color:var(--muted); }
+  .week-day strong { display:grid; place-items:center; height:38px; border-radius:10px; background:#f5f3f7; margin-top:10px; font-size:14px; font-weight:500; }
+  .week-day.studied strong { background:#e9e1f8; color:var(--accent); }
+  .week-day.today strong { outline:1px solid #b09bd8; outline-offset:2px; }
+  .weekly-card > p { font-size:12px; line-height:1.8; }
+  .quick-counts { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+  .quick-counts button { padding:5px 0; }
+  .route-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; margin-top:24px; }
+  .route-card { position:relative; padding:16px 22px 22px; text-align:left; background:#f1edf5; border-color:#e3ddea; }
+  .route-anchor { display:block; width:100px; height:86px; margin:0 0 8px; object-fit:contain; }
+  .route-card strong { display:block; font-size:17px; margin-bottom:10px; }
+  .route-card span { display:block; font-size:12px; line-height:1.8; color:var(--muted); }
+  .route-card b { position:absolute; right:20px; top:32px; color:var(--accent); }
+  .resume-card { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px; border:1px solid #d1c4e6; border-radius:16px; background:#efe9f8; margin-bottom:24px; }
+  .resume-card strong { font-size:15px; }
+  .resume-card p { font-size:12px; margin:8px 0 0; }
+  .resume-card .actions { flex:none; }
+  .resume-card button { font-size:13px; }
+  .library-controls, .training-filters { display:flex; gap:16px; align-items:end; margin-bottom:20px; }
+  .library-controls .word-search { flex:1; min-width:0; width:auto; min-height:44px; }
+  .library-controls .study-filter, .training-filters .study-filter { margin:0; width:200px; }
+  .filter-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:24px; }
+  .filter-tabs button { font-size:13px; min-height:40px; }
+  .filter-tabs .active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .result-count { font-size:12px; color:var(--muted); margin-bottom:12px; }
+  .library-list { margin-bottom:24px; }
+  .library-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line); }
+  .word-open { border:0; background:transparent; text-align:left; padding:8px 0; min-width:0; }
+  .word-open strong { display:block; font-size:19px; margin-bottom:8px; overflow-wrap:anywhere; }
+  .word-open .muted { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:12px; line-height:1.7; }
+  .word-status { font-size:11px; color:var(--muted); white-space:nowrap; }
+  .word-detail { max-width:760px; margin:auto; }
+  .word-detail .eyebrow { margin-top:20px; }
+  .word-detail h2 { font-size:36px; overflow-wrap:anywhere; }
+  .word-definition { color:var(--muted); line-height:1.8; }
+  .word-example { padding:16px 0; border-top:1px solid var(--line); font-size:17px; line-height:1.8; overflow-wrap:anywhere; }
+  .word-example .muted { font-size:13px; white-space:pre-line; }
+  .word-detail .actions { margin-top:20px; }
+  .training-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+  .training-card { display:flex; flex-direction:column; padding:22px; }
+  .training-type { font-size:10px; letter-spacing:.12em; color:var(--accent); margin-bottom:15px; }
+  .training-card > p { font-size:12px; line-height:1.8; }
+  .training-count { margin-top:auto; color:var(--muted); padding-top:10px; }
+  .training-card button { width:100%; font-size:13px; margin-top:4px; }
+  #view-learn[data-page="session"] { max-width:760px; }
+  .round-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; font-size:13px; color:var(--muted); }
+  .round-heading button { padding-left:0; }
+  .round-progress { display:flex; align-items:center; gap:18px; margin-bottom:22px; font-size:12px; color:var(--muted); }
+  .round-progress span { flex:none; }
+  .recall-prompt { padding:28px 0; color:var(--muted); font-size:14px; }
+  .round-summary h1 { font-size:28px; line-height:1.5; }
+  .round-summary > p { font-size:13px; }
+  .summary-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; padding:24px 0; }
+  .summary-metrics strong { display:block; font-size:28px; font-weight:600; }
+  .summary-metrics span { display:block; font-size:11px; line-height:1.8; color:var(--muted); margin-top:8px; }
+  .round-results { padding:0; list-style:none; border-top:1px solid var(--line); margin:0 0 24px; }
+  .round-results li { display:flex; gap:16px; justify-content:space-between; align-items:center; padding:16px 0; border-bottom:1px solid var(--line); }
+  .round-results strong { font-size:16px; overflow-wrap:anywhere; }
+  .round-results span { flex:none; font-size:12px; color:var(--muted); }
+  .empty-state { padding:30px 0; color:var(--muted); font-size:14px; line-height:1.8; }
+  html[data-side-panel="drawer"] #session-side { width:min(320px,calc(100% - 40px)); visibility:hidden; }
+  html[data-side-panel="drawer"] #view-chat.side-open #session-side { visibility:visible; }
+  html[data-layout="mobile"] body { padding-bottom:calc(66px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))); }
+  html[data-layout="mobile"] header { width:min(560px,100%); align-self:center; grid-template-columns:minmax(0,1fr) repeat(2,44px); }
+  html[data-layout="mobile"] .brand { grid-area:1/1/2/3; }
+  html[data-layout="mobile"] #btn-stats { grid-area:1/3; }
+  html[data-layout="mobile"] #btn-side { grid-area:2/1/3/2; }
+  html[data-layout="mobile"] #btn-chat-practice { grid-area:2/2/3/4; }
+  html[data-layout="mobile"] .main-nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); position:fixed; bottom:0; left:50%; transform:translateX(-50%); z-index:12; width:min(560px,100%); padding:6px 8px calc(6px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))); background:#fdfcf9f5; backdrop-filter:blur(16px); border-top:1px solid var(--line); gap:4px; }
+  html[data-layout="mobile"] .main-nav button { display:flex; flex-direction:column; min-height:54px; font-size:12px; gap:7px; padding:6px; }
+  html[data-layout="mobile"] .main-nav button > span { font-size:20px; }
+  html[data-layout="mobile"] #view-learn { max-width:560px; padding-top:26px; padding-bottom:24px; }
+  html[data-layout="mobile"] #view-chat { width:min(560px,100%); margin:0 auto; }
+  html[data-layout="mobile"] .page-heading { margin-bottom:22px; }
+  html[data-layout="mobile"] .page-heading h1 { font-size:26px; padding-right:75px; max-width:410px; }
+  html[data-layout="mobile"] .today-avatar { width:74px; height:74px; top:0; right:0; }
+  html[data-layout="mobile"] .dashboard-grid { grid-template-columns:minmax(0,1fr); gap:16px; }
+  html[data-layout="mobile"] .surface { padding:20px; border-radius:16px; }
+  html[data-layout="mobile"] .plan-metrics { gap:20px; }
+  html[data-layout="mobile"] .plan-start { grid-template-columns:1fr; gap:10px; margin-top:24px; }
+  html[data-layout="mobile"] .plan-number strong { font-size:36px; }
+  html[data-layout="mobile"] .week-grid { margin-top:22px; }
+  html[data-layout="mobile"] .route-grid { grid-template-columns:minmax(0,1fr); gap:12px; margin-top:16px; }
+  html[data-layout="mobile"] .route-card { min-height:106px; padding:22px 18px 22px 100px; }
+  html[data-layout="mobile"] .route-anchor { position:absolute; left:10px; top:12px; width:80px; height:80px; margin:0; }
+  html[data-layout="mobile"] .route-card b { display:none; }
+  html[data-layout="mobile"] .route-card strong { font-size:15px; }
+  html[data-layout="mobile"] .scene-hero { min-height:212px; padding:24px 20px; border-radius:18px; background-position:62% center; background-image:linear-gradient(90deg,rgba(253,250,244,.96),rgba(253,250,244,.72) 52%,rgba(253,250,244,.08)),var(--scene-day); }
+  html[data-layout="mobile"] .scene-hero .scene-greeting { max-width:180px; margin-top:28px; font-size:12px; }
+  html[data-layout="mobile"] .scene-hero .today-avatar { width:58px; height:58px; right:10px; top:16px; }
+  html[data-layout="mobile"] .illustrated-heading { min-height:94px; padding:8px 95px 0 0; }
+  html[data-layout="mobile"] .illustrated-heading h1 { padding:0; }
+  html[data-layout="mobile"] .heading-anchor { width:92px; height:86px; right:-2px; top:0; }
+  html[data-layout="mobile"] #chat-main { background-position:68% center; }
+  html[data-layout="mobile"] .resume-card { display:block; padding:18px; }
+  html[data-layout="mobile"] .resume-card .actions { margin-top:14px; }
+  html[data-layout="mobile"] .resume-card .actions button { flex:1; }
+  html[data-layout="mobile"] .library-controls { align-items:stretch; flex-direction:column; }
+  html[data-layout="mobile"] .library-controls .study-filter { width:100%; }
+  html[data-layout="mobile"] .library-controls .word-search { flex:none; width:100%; }
+  html[data-layout="mobile"] .filter-tabs { gap:6px; margin-bottom:20px; }
+  html[data-layout="mobile"] .filter-tabs button { padding:8px 11px; min-height:44px; }
+  html[data-layout="mobile"] .library-row { gap:8px; grid-template-columns:minmax(0,1fr) auto; }
+  html[data-layout="mobile"] .word-status { display:none; }
+  html[data-layout="mobile"] .word-open strong { font-size:18px; }
+  html[data-layout="mobile"] .training-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  html[data-layout="mobile"] .training-card { padding:16px 12px; }
+  html[data-layout="mobile"] .training-card h2 { font-size:17px; }
+  html[data-layout="mobile"] .training-type { font-size:9px; letter-spacing:.06em; }
+  html[data-layout="mobile"] .training-filters { gap:12px; }
+  html[data-layout="mobile"] .training-filters .study-filter { width:calc(50% - 6px); }
+  html[data-layout="mobile"] .summary-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  html[data-layout="mobile"] .round-summary h1 { font-size:25px; }
+  html[data-layout="mobile"] #chat-composer { padding-bottom:8px; }
+  html[data-layout="mobile"] #chat-toast { bottom:calc(90px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))); }
+  html[data-layout="mobile"] body.keyboard-open { padding-bottom:0; }
+  html[data-layout="mobile"] body.keyboard-open .main-nav { display:none; }
+  html[data-layout="mobile"] body.chat-mode.keyboard-open #btn-side { grid-area:1/1/2/4; }
+  html[data-layout="mobile"] body.chat-mode.keyboard-open #btn-chat-practice { grid-area:1/4/2/6; }
+  @media (max-width:700px) {
+    html[data-layout="desktop"] header { padding:10px 12px; gap:8px; }
+    html[data-layout="desktop"] .main-nav { order:4; flex-basis:100%; }
+    html[data-layout="desktop"] .main-nav button { flex:1; padding:10px 6px; font-size:12px; }
+    html[data-layout="desktop"] .brand { font-size:20px; }
+    html[data-layout="desktop"] header > button { padding:8px; }
+    html[data-layout="desktop"] #view-learn { padding:22px 16px; }
+    html[data-layout="desktop"] .dashboard-grid { grid-template-columns:1fr; }
+    html[data-layout="desktop"] .training-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    html[data-layout="desktop"] .surface { padding:18px; }
+    html[data-layout="desktop"] .resume-card { flex-wrap:wrap; }
+    html[data-layout="desktop"] .library-controls { flex-wrap:wrap; }
+    html[data-layout="desktop"] .library-controls .word-search { flex-basis:100%; }
+    html[data-layout="desktop"] .library-row { grid-template-columns:minmax(0,1fr) auto; }
+    html[data-layout="desktop"] .word-status { display:none; }
+    html[data-layout="desktop"] button { min-height:44px; }
+  }
+</style>
+<style>
+  [hidden] { display:none!important; }
+  html[data-scene="dawn"] { --accent:#7961aa; --bg:#f7f3f7; --panel-2:#f0e9f3; }
+  html[data-scene="dusk"] { --accent:#9b603d; --bg:#faf4ed; --panel-2:#f4e8db; --line:#e7d9cd; }
+  html[data-scene="night"] { --accent:#6964ad; }
+  .scene-hero { background-image:linear-gradient(90deg,rgba(253,250,244,.97),rgba(253,250,244,.72) 40%,transparent 68%),var(--scene-current); }
+  html[data-layout="mobile"] .scene-hero { background-image:linear-gradient(90deg,rgba(253,250,244,.96),rgba(253,250,244,.72) 52%,rgba(253,250,244,.08)),var(--scene-current); }
+  .settings-tabs { display:flex; clear:both; gap:4px; overflow-x:auto; position:sticky; top:-26px; z-index:2; padding:12px 0; margin:0 0 16px; background:var(--panel); border-bottom:1px solid var(--line); }
+  .settings-tabs button { flex:1 0 auto; min-width:44px; min-height:44px; padding:8px 6px; border:0; background:transparent; white-space:nowrap; font-size:14px; }
+  .settings-tabs button[aria-selected="true"] { color:var(--accent); background:var(--panel-2); }
+  .scene-previews { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:12px 0 20px; }
+  .scene-previews button { min-width:0; padding:4px; background:var(--panel); overflow:hidden; }
+  .scene-previews button[aria-pressed="true"] { outline:2px solid var(--accent); outline-offset:2px; }
+  .scene-previews img { width:100%; aspect-ratio:1.3; object-fit:cover; border-radius:5px; display:block; }
+  .scene-previews span { display:block; padding:7px 0; font-size:12px; }
+  .field input[type="checkbox"] { width:20px; height:20px; vertical-align:middle; margin-right:6px; }
+  .chat-toolbar { display:flex; align-items:center; gap:12px; padding:9px 16px; background:var(--panel); border-bottom:1px solid var(--line); z-index:1; }
+  .chat-toolbar select { max-width:45%; min-width:0; min-height:40px; background:var(--panel-2); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 9px; }
+  .chat-toolbar .muted { font-size:12px; flex:1; }
+  .chat-toolbar button { font-size:12px; min-height:40px; padding:8px; }
+  .composer-meta { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); min-height:16px; padding-top:5px; gap:8px; }
+  .message-actions { display:flex; gap:7px; margin:8px 0; }
+  .message-actions button { color:#fff; border-color:#ffffff40; background:#182338a8; font-size:11px; min-height:34px; padding:6px 10px; }
+  .msg.user .message-actions { justify-content:flex-end; }
+  .session-search,.session-filter { display:block; width:calc(100% - 24px); margin:10px 12px; min-height:42px; padding:8px; color:var(--fg); background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  .side-item { flex-wrap:wrap; }
+  .session-menu { width:100%; padding:0 8px 6px; }
+  .session-menu summary { font-size:11px; color:var(--muted); cursor:pointer; padding:6px; }
+  .session-menu button { font-size:11px; padding:7px; margin:3px; }
+  .text-editor input,.text-editor textarea { width:100%; padding:12px; color:var(--fg); background:var(--panel-2); border:1px solid var(--line); border-radius:10px; margin-bottom:18px; resize:vertical; }
+  html[data-theme="dark"] { color-scheme:dark; --bg:#171923; --panel:#222531; --panel-2:#2b2b3c; --line:#424253; --fg:#efedf6; --muted:#b0acbd; --accent:#beaceb; --ok:#8ecab0; --bad:#f29ba5; --warn:#e1bb87; --env:#a8cfde; --action:#d4b5ec; --thought:#d8c59f; --speech:#ade0c4; }
+  html[data-theme="dark"] .plan-card,html[data-theme="dark"] .route-card,html[data-theme="dark"] .resume-card,html[data-theme="dark"] .week-day strong,html[data-theme="dark"] button.secondary { background:var(--panel-2); border-color:var(--line); }
+  html[data-theme="dark"] input,html[data-theme="dark"] select,html[data-theme="dark"] textarea,html[data-theme="dark"] .msg.assistant .msg-body,html[data-theme="dark"] .qcard,html[data-theme="dark"] .answer-feedback,html[data-theme="dark"] .study-card,html[data-theme="dark"] .study-choice,html[data-theme="dark"] .main-nav { color:var(--fg); background:var(--panel); border-color:var(--line); }
+  html[data-theme="dark"] .msg.user .msg-body,html[data-theme="dark"] .week-day.studied strong { background:#38334b; border-color:var(--line); }
+  html[data-theme="dark"] header,html[data-theme="dark"] #session-side,html[data-theme="dark"] .side-head,html[data-theme="dark"] #chat-practice,html[data-theme="dark"] .tour-card { background:var(--panel); }
+  html[data-theme="dark"] #chat-input,html[data-theme="dark"] .study-filter select,html[data-theme="dark"] .answer-option,html[data-theme="dark"] .filter-apply { background:var(--panel); color:var(--fg); }
+  html[data-theme="dark"] .main-nav .active,html[data-theme="dark"] .side-item.active,html[data-theme="dark"] .pill,html[data-theme="dark"] .audio-play,html[data-theme="dark"] .study-sidebar { background:var(--panel-2); color:var(--accent); }
+  html[data-theme="dark"] .exercise-hint,html[data-theme="dark"] .hint-box,html[data-theme="dark"] .study-error { background:var(--panel-2); color:var(--fg); }
+  html[data-theme="dark"] .answer-option.selected { background:#393149; color:var(--fg); }
+  html[data-theme="dark"] .answer-option.answer-correct,html[data-theme="dark"] .answer-feedback.success { background:#233d34; color:var(--ok); }
+  html[data-theme="dark"] button.primary,html[data-theme="dark"] .filter-tabs .active { color:#241e35; }
+  html[data-theme="dark"] .scene-hero { border-color:var(--line); background-image:linear-gradient(90deg,rgba(24,25,36,.96),rgba(24,25,36,.64) 40%,rgba(24,25,36,.1) 78%),var(--scene-current); }
+  html[data-theme="dark"] .scene-hero .scene-greeting { color:var(--muted); }
+  html[data-font="large"] .msg-body .para,html[data-font="large"] .qcard-body,html[data-font="large"] .question-stem,html[data-font="large"] .word-definition,html[data-font="large"] .word-example,html[data-font="large"] .field label { font-size:18px; line-height:1.9; }
+  html[data-font="large"] .hint,html[data-font="large"] .route-card span,html[data-font="large"] .word-open .muted,html[data-font="large"] .side-item-title { font-size:15px; }
+  html[data-motion="reduce"] *,html[data-motion="reduce"] *::before,html[data-motion="reduce"] *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+  html[data-layout="mobile"] .settings-tabs { top:-20px; }
+  html[data-layout="mobile"] #settings-models > .actions button { padding:8px; font-size:13px; white-space:nowrap; }
+  html[data-layout="mobile"] .chat-toolbar { gap:7px; padding:7px 12px; flex-wrap:wrap; }
+  html[data-layout="mobile"] .chat-toolbar select { max-width:55%; flex:1; }
+  html[data-layout="mobile"] .chat-toolbar .muted { display:none; }
+  html[data-layout="mobile"] .message-actions button,html[data-layout="mobile"] .session-menu summary,html[data-layout="mobile"] .session-menu button { min-height:44px; }
+  html[data-layout="mobile"] #btn-chat-stop { min-width:56px; padding:8px; }
+  html[data-layout="mobile"] .scene-previews { gap:6px; }
 </style>
 </head>
 <body>
   <header>
+    <a class="brand" href="#" aria-label="梦鲸词汇首页">梦鲸<span>VOCAB</span></a>
+    <nav class="main-nav" aria-label="主要导航">
+      <button id="nav-learn" data-study-page="learn"><span aria-hidden="true">◒</span>今日</button>
+      <button id="nav-library" data-study-page="library"><span aria-hidden="true">▤</span>词库</button>
+      <button id="nav-practice" data-study-page="practice"><span aria-hidden="true">◇</span>专项</button>
+      <button id="nav-chat"><span aria-hidden="true">☾</span>梦鲸</button>
+      <button id="btn-settings" aria-haspopup="dialog" aria-controls="settings" aria-expanded="false"><span aria-hidden="true">⚙</span>设置</button>
+    </nav>
     <span id="hud-chat-group">
       模式 <b id="hud-chat-mode">对话</b>
       　角色回复 <b id="hud-chat-turns">0</b>
@@ -283,128 +750,121 @@
       　<b id="hud-chat-rest">本周期已出 0/10 题</b>
       　累计 token <b id="hud-chat-tokens">—</b>
     </span>
-    <span id="hud-wordblade-group" class="hidden">
-      场景 <b id="hud-scene">1</b>
-      　输出轮数 <b id="hud-turns">0</b>
-      　通过挑战 <b id="hud-passed">0</b>
-      　失败 <b id="hud-fail">0</b>
-      　万能词 <b id="hud-wildcard">0</b>
-      　<span id="hud-difficulty">普通</span>
-      　<span id="hud-tier">基础</span>
-    </span>
     <span class="spacer"></span>
-    <button id="btn-side" class="ghost hidden">对话列表</button>
-    <button id="btn-profile" class="ghost">档案</button>
+    <button id="btn-side" class="ghost hidden" aria-controls="session-side" aria-expanded="false">对话列表</button>
+    <button id="btn-chat-practice" class="ghost hidden" aria-controls="chat-practice" aria-expanded="false">小练习</button>
     <button id="btn-stats" class="ghost">统计</button>
-    <button id="btn-settings" class="ghost">设置</button>
   </header>
+
+  <main id="view-learn" class="hidden" aria-label="学习中心"></main>
 
   <!-- ============ 对话模式 ============ -->
   <section id="view-chat">
-    <aside id="session-side"><div id="session-list"></div></aside>
+    <button id="chat-overlay" type="button" aria-label="收起面板" tabindex="-1" hidden></button>
+    <aside id="session-side" aria-label="对话列表" tabindex="-1"><div id="session-list"></div></aside>
     <div id="chat-main">
+      <div class="chat-toolbar"><select id="chat-model" aria-label="当前聊天模型"></select><span id="chat-companion" class="muted"></span><button id="btn-stop-reading" class="ghost" disabled>停止朗读</button><button id="btn-export-chat" class="ghost">导出对话</button></div>
       <div id="chat-thread"></div>
       <div id="chat-composer">
         <div class="composer-inner">
-          <textarea id="chat-input" rows="1" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+          <textarea id="chat-input" rows="1" aria-label="聊天消息" placeholder="说点什么…" enterkeyhint="enter"></textarea>
           <button id="btn-chat-send" class="primary">发送</button>
+          <button id="btn-chat-stop" class="ghost" hidden>停止</button>
         </div>
+        <div class="composer-meta"><span id="draft-status" role="status"></span><span id="connection-status" role="status"></span></div>
       </div>
     </div>
+    <aside id="chat-practice" aria-label="聊天中的词汇练习" tabindex="-1"></aside>
   </section>
 
-  <!-- ============ 拼单词模式（保留，可在设置里切回） ============ -->
-  <main id="view-wordblade" class="hidden">
-    <section class="panes">
-      <article class="card pane scene-pane">
-        <h2>挑战场景</h2>
-        <div class="pane-body">
-          <div class="tags">
-            <span class="tag" id="tag-mode">应对</span>
-            <span class="tag" id="tag-shell">日常</span>
-            <span class="tag hot hidden" id="tag-meme"></span>
-          </div>
-          <div class="scene" id="scene-text">正在抽词与出题…</div>
-          <div class="objective hidden" id="scene-objective">
-            <span>挑战目标：</span><em id="objective-text"></em>
-          </div>
-        </div>
-      </article>
-
-      <article class="card pane verdict-pane" id="verdict-card">
-        <h2>应对叙事</h2>
-        <div class="pane-body">
-          <div class="verdict-title hidden" id="verdict-title"></div>
-          <div class="narrative placeholder" id="verdict-narrative">你的应对会接着挑战场景写在这里。</div>
-          <p class="feedback hidden" id="verdict-feedback"></p>
-          <p class="meta" id="verdict-detail"></p>
-        </div>
-      </article>
-    </section>
-
-    <section class="card hidden" id="gameover">
-      <h2>本局结束</h2>
-      <p class="meta" id="gameover-text"></p>
-      <div class="actions" style="margin-top:12px">
-        <button id="btn-restart" class="primary">重新开始</button>
-        <button id="btn-stats-2" class="ghost">查看统计</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="wordline empty" id="wordline">点击下方字母拼出一个单词</div>
-      <div class="tiles" id="tiles"></div>
-      <div class="actions">
-        <button id="btn-undo">撤销</button>
-        <button id="btn-clear">清空</button>
-        <button id="btn-dice">骰子 · 重抽</button>
-        <button id="btn-wildcard">万能词</button>
-        <button id="btn-submit" class="primary">确定</button>
-      </div>
-    </section>
-  </main>
-
-  <div id="toast" class="hidden"></div>
   <div id="chat-toast" class="hidden"></div>
-
-  <!-- ============ user 档案 ============ -->
-  <dialog id="profile-dialog">
-    <h2>先认识一下</h2>
-    <p class="hint">这是给梦鲸看的档案。她会按你希望的方式称呼你。</p>
-    <div class="field">
-      <label for="pf-name">你希望梦鲸如何称呼你</label>
-      <input id="pf-name" placeholder="比如：阿澈" maxlength="20" autocomplete="off" />
-    </div>
-    <div class="field">
-      <label for="pf-gender">性别</label>
-      <select id="pf-gender">
-        <option value="男">男</option>
-        <option value="女">女</option>
-        <option value="自定义">自定义</option>
-      </select>
-    </div>
-    <div class="field hidden" id="pf-custom-wrap">
-      <label for="pf-custom">自定义性别</label>
-      <input id="pf-custom" placeholder="写你希望的叫法" maxlength="20" autocomplete="off" />
-    </div>
-    <p class="hint" id="pf-error"></p>
-    <div class="actions">
-      <button id="btn-pf-save" class="primary">开始对话</button>
-    </div>
-  </dialog>
 
   <!-- ============ 设置 ============ -->
   <dialog id="settings">
+    <button id="btn-close-settings" class="dialog-close" aria-label="关闭设置">×</button>
     <h2>设置</h2>
-    <p class="hint">自带 Key 直连 OpenAI 兼容端点。Key 只存在你自己的浏览器里，导出存档时不会包含。</p>
+    <div class="settings-tabs" role="tablist" aria-label="设置分类">
+      <button role="tab" id="tab-general" aria-controls="settings-general" data-settings-tab="general">常用</button><button role="tab" id="tab-profile" aria-controls="settings-profile" data-settings-tab="profile">档案</button><button role="tab" id="tab-models" aria-controls="settings-models" data-settings-tab="models">模型</button><button role="tab" id="tab-voice" aria-controls="settings-voice" data-settings-tab="voice">语音服务</button><button role="tab" id="tab-companion" aria-controls="settings-companion" data-settings-tab="companion">陪学</button><button role="tab" id="tab-data" aria-controls="settings-data" data-settings-tab="data">数据</button><button role="tab" id="tab-advanced" aria-controls="settings-advanced" data-settings-tab="advanced">高级</button>
+    </div>
+    <section id="settings-profile" role="tabpanel" aria-labelledby="tab-profile" hidden>
+      <h3>我的档案</h3>
+      <p class="hint">梦鲸会按这里的称呼与你交流。保存后用于当前对话和之后的新对话。</p>
+      <div class="field"><label for="pf-name">你希望梦鲸如何称呼你</label><input id="pf-name" placeholder="比如：阿澈" maxlength="20" autocomplete="off" /></div>
+      <div class="field"><label for="pf-gender">性别</label><select id="pf-gender"><option value="男">男</option><option value="女">女</option><option value="自定义">自定义</option></select></div>
+      <div class="field hidden" id="pf-custom-wrap"><label for="pf-custom">自定义性别</label><input id="pf-custom" placeholder="写你希望的叫法" maxlength="20" autocomplete="off" /></div>
+      <p class="hint" id="pf-error" role="status"></p>
+    </section>
+    <section id="settings-voice" role="tabpanel" aria-labelledby="tab-voice" hidden>
+      <h3>梦鲸聊天语音</h3>
+      <p class="hint">用于聊天段落、整条消息及梦鲸回复自动朗读。单词和练习朗读在「常用」中设置。</p>
+      <div class="field"><label for="voice-provider">聊天语音来源</label><select id="voice-provider"><option value="system">系统语音 · 英文</option><option value="aliyun">阿里百炼 · Qwen-Audio-TTS</option><option value="minimax">MiniMax Speech</option></select></div>
+      <div id="voice-online-fields" hidden>
+        <p class="hint" id="voice-provider-hint"></p>
+        <div class="field"><label for="voice-api-key">语音 API Key</label><input id="voice-api-key" type="password" autocomplete="off" spellcheck="false" maxlength="4096" /></div>
+        <label><input id="voice-show-key" type="checkbox" /> 显示 Key</label>
+        <div class="field" id="voice-workspace-field"><label for="voice-workspace">业务空间 ID · 北京地域</label><input id="voice-workspace" autocomplete="off" spellcheck="false" maxlength="100" /></div>
+        <div class="field"><label for="voice-model">语音模型</label><input id="voice-model" autocomplete="off" spellcheck="false" maxlength="256" /></div>
+        <div class="field"><label for="voice-us">美式 / 默认英文音色 ID</label><input id="voice-us" autocomplete="off" spellcheck="false" maxlength="256" /></div>
+        <div class="field"><label for="voice-uk">英式音色 ID</label><input id="voice-uk" autocomplete="off" spellcheck="false" maxlength="256" /></div>
+        <div class="field"><label for="voice-zh">中文聊天音色 ID</label><input id="voice-zh" autocomplete="off" spellcheck="false" maxlength="256" /></div>
+        <p class="hint">更换模型时，请同步选择它支持的音色。<a id="voice-docs" target="_blank" rel="noopener noreferrer">查看官方音色表</a></p>
+        <div class="field"><label><input id="voice-fallback" type="checkbox" /> 在线服务失败时，尝试系统英文朗读</label></div>
+      </div>
+      <fieldset class="speech-settings"><legend>聊天朗读</legend>
+        <div class="field"><label for="voice-accent">聊天英语口音</label><select id="voice-accent"><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></div>
+        <div class="field"><label for="voice-rate">聊天语速 · <output id="voice-rate-label" for="voice-rate">0.85×</output></label><input id="voice-rate" type="range" min="0.5" max="1.5" step="0.05" value="0.85" /></div>
+      </fieldset>
+      <div class="field"><label><input id="voice-auto-read" type="checkbox" /> 梦鲸回复完成后自动朗读</label></div>
+      <p id="voice-storage-hint" class="hint"></p>
+      <p class="hint">服务配置修改后需保存。试听会保存并调用所选服务，在线合成可能产生费用。系统语音目前朗读英文，在线服务支持中英文。</p>
+      <div class="actions"><button id="voice-save" type="button">保存语音服务</button></div>
+      <p id="voice-save-status" class="hint" role="status"></p>
+      <div class="voice-preview-actions"><button id="voice-test-en" type="button" class="speech-button" aria-pressed="false">▶ 英文试听</button><button id="voice-test-chat" type="button" class="speech-button" aria-pressed="false">▶ 中英试听</button></div>
+      <p id="voice-test-status" class="hint" role="status"></p>
+    </section>
+    <section id="settings-general" role="tabpanel" aria-labelledby="tab-general">
+    <button id="btn-tutorial" type="button" class="secondary">梦鲸使用引导 · 再逛一圈</button>
+    <fieldset class="speech-settings"><legend>学习朗读</legend>
+      <p class="hint">单词、例句、听力练习和选中英文使用系统声音。</p>
+      <div class="field"><label for="set-speech-accent">英语口音</label><select id="set-speech-accent"><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></div>
+      <div class="field"><label for="set-speech-rate">语速 · <output id="speech-rate-label" for="set-speech-rate">0.85×</output></label><input id="set-speech-rate" type="range" min="0.5" max="1.5" step="0.05" value="0.85" /></div>
+      <div class="field"><label><input id="set-speech-offline" type="checkbox" /> 学习朗读仅使用离线声音</label></div>
+      <p class="hint">偏好立即保存。离线模式只使用已确认的系统离线声音；聊天语音单独设置。</p>
+      <div class="voice-preview-actions"><button id="btn-refresh-voices" type="button" class="ghost">刷新系统声音</button><button id="speech-test" type="button" class="speech-button" aria-pressed="false">▶ 学习读音试听</button></div>
+      <p id="speech-voice-status" class="hint" role="status"></p>
+    </fieldset>
+    <div class="field"><label for="set-scene">窗外时光 · <span id="scene-status"></span></label><select id="set-scene"><option value="auto">跟随设备时间</option><option value="dawn">清晨 · 05:00–09:00</option><option value="day">白昼 · 09:00–17:00</option><option value="dusk">黄昏 · 17:00–20:00</option><option value="night">月夜 · 20:00–05:00</option></select></div>
+    <div class="scene-previews" id="scene-previews" aria-label="选择背景"></div>
+    <div class="field"><label for="set-theme">界面颜色</label><select id="set-theme"><option value="auto">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+    <div class="field"><label for="set-font">文字大小</label><select id="set-font"><option value="normal">标准</option><option value="large">大字</option></select></div>
+    <div class="field"><label for="set-motion">页面动效</label><select id="set-motion"><option value="system">跟随系统</option><option value="reduce">减少动效</option></select></div>
+    <div class="field"><label><input type="checkbox" id="set-enter-send" /> 桌面端 Enter 发送，Shift + Enter 换行</label></div>
+    <p class="hint">外观与发送偏好立即保存。手机端使用发送按钮。</p>
 
     <div class="field">
-      <label for="set-mode">玩法模式</label>
+      <label for="set-mode">默认页面</label>
       <select id="set-mode">
-        <option value="chat">对话模式（默认）· 与梦鲸自由对话，按节奏出题</option>
-        <option value="wordblade">拼单词模式（已遗弃的可选玩法）· 抽字母拼词闯关</option>
+        <option value="learn">今日学习 · 计划与复习</option>
+        <option value="library">词库 · 浏览与收藏</option>
+        <option value="practice">专项训练 · 按题型练习</option>
+        <option value="chat">与梦鲸聊天 · 与梦鲸自由对话，按节奏出题</option>
       </select>
     </div>
+    <div class="field">
+      <label for="set-layout">布局排版</label>
+      <select id="set-layout">
+        <option value="auto">自动适配</option>
+        <option value="mobile">手机排版</option>
+        <option value="desktop">桌面排版</option>
+      </select>
+      <p id="layout-status" class="hint" role="status"></p>
+    </div>
+    </section>
+    <section id="settings-companion" role="tabpanel" aria-labelledby="tab-companion" hidden>
+    <div class="field"><label for="set-companion-mode">陪学方式</label><select id="set-companion-mode"><option value="companion">温柔陪学</option><option value="speaking">口语教练</option><option value="exam">考试复盘</option><option value="free">自由交流</option></select></div>
+    <div class="field"><label for="set-companion-instructions">交流偏好</label><textarea id="set-companion-instructions" rows="3" maxlength="3000" placeholder="例如：解释时多给一个生活中的例句。"></textarea></div>
+    <div class="field"><label for="set-companion-memory">希望梦鲸记住的事</label><textarea id="set-companion-memory" rows="4" maxlength="4000" placeholder="例如：正在准备四级，介词搭配容易混淆。"></textarea></div>
+    <p class="hint">保存后用于当前对话和之后的新对话。记忆由你填写、修改或清空，会随聊天发给所选模型。</p>
     <div class="field">
       <label for="set-everyn">每几条角色回复出一次题（对话模式）</label>
       <input id="set-everyn" type="number" min="1" max="20" step="1" />
@@ -442,7 +902,8 @@
       <p class="hint preference-error" id="face-style-status" role="status"></p>
     </fieldset>
 
-    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0" />
+    </section>
+    <section id="settings-advanced" role="tabpanel" aria-labelledby="tab-advanced" hidden>
 
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -471,22 +932,23 @@
       </label>
     </div>
 
-    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0" />
+    </section>
+    <section id="settings-models" role="tabpanel" aria-labelledby="tab-models" hidden>
+    <p id="model-storage-hint" class="hint">选择服务商预设，或填写自定义接口。Key 仅存于当前浏览器，并随请求发送给你配置的端点。</p>
+    <div class="field"><label for="set-model-entry">已保存的配置</label><select id="set-model-entry"></select></div>
+    <div class="actions"><button id="btn-add-model" class="ghost">新增配置</button><button id="btn-copy-model" class="ghost">复制配置</button><button id="btn-delete-model" class="ghost">移除配置</button></div>
+    <div class="field"><label for="set-model-name">配置名称</label><input id="set-model-name" maxlength="60" placeholder="我的模型" /></div>
 
     <div class="field">
       <label for="preset">接口预设</label>
       <select id="preset"></select>
     </div>
     <div class="field">
-      <label for="set-provider">接口类型</label>
-      <select id="set-provider">
-        <option value="deepseek">DeepSeek</option>
-        <option value="openai">OpenAI</option>
-        <option value="openrouter">OpenRouter</option>
-        <option value="ollama">Ollama</option>
-        <option value="custom">其他兼容接口</option>
-      </select>
+      <label for="set-provider">模型服务商</label>
+      <select id="set-provider"></select>
     </div>
+    <div class="field"><label for="set-api-format">请求格式</label><select id="set-api-format"></select></div>
+    <p class="hint">请求格式需与接口一致。模型名可替换为账号有权限使用的模型或部署 ID。</p>
     <div class="field">
       <label for="set-cache-mode">请求策略</label>
       <select id="set-cache-mode">
@@ -502,48 +964,54 @@
     <p class="hint" id="endpoint-note"></p>
     <div class="field">
       <label for="model">模型名</label>
-      <input id="model" placeholder="deepseek-chat" />
+      <input id="model" placeholder="deepseek-flash" />
     </div>
     <div class="field">
       <label for="apiKey">API Key（本地端点可留空）</label>
       <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
     </div>
-    <div class="field">
-      <label for="tier">词汇档位（仅拼单词模式）</label>
-      <select id="tier">
-        <option value="基础">基础 · 四级核心词汇</option>
-        <option value="进阶">进阶 · 高级词汇</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="difficulty">游戏难度（仅拼单词模式）</label>
-      <select id="difficulty"></select>
-    </div>
-    <p class="hint" id="difficulty-note"></p>
-    <div class="field">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" id="usePrefill" style="width:auto" />
-        <span>使用 JSON 回复预填充（仅拼单词模式）</span>
-      </label>
-    </div>
-    <div class="actions">
+    <div class="field"><label for="set-auth-mode">认证方式</label><select id="set-auth-mode">
+      <option value="auto">跟随请求格式</option><option value="bearer">Bearer Token</option><option value="api-key">api-key（Azure 等）</option><option value="x-api-key">x-api-key</option><option value="x-goog-api-key">x-goog-api-key</option><option value="none">无需认证</option>
+    </select></div>
+    <div class="actions settings-actions">
       <button id="btn-test" class="ghost">测试连接</button>
-      <button id="btn-save-settings" class="primary">保存</button>
-      <button id="btn-clear-save" class="ghost">清空存档重开</button>
     </div>
     <p class="hint" id="test-result"></p>
+    <div class="field"><label><input type="checkbox" id="set-stream" /> 逐字显示回复</label></div>
+    <div class="field"><label><input type="checkbox" id="set-send-temperature" /> 自定义表达随机性</label></div>
+    <div class="field"><label for="set-temperature" id="temperature-label">表达随机性（0–2）</label><input id="set-temperature" type="number" min="0" max="2" step="0.1" /></div>
+    <p class="hint">关闭时使用模型默认值。部分推理模型不接受自定义随机性。</p>
+    <details><summary>兼容性选项</summary>
+      <div class="field"><label for="set-json-mode">题目评价的 JSON 格式约束</label><select id="set-json-mode"><option value="auto">自动（不支持时重试普通文本）</option><option value="off">仅通过提示词要求 JSON</option></select></div>
+      <p class="hint">Claude Messages 使用提示词要求 JSON。所有格式的评价结果都会校验后再计分。</p>
+      <div id="chat-compatibility">
+        <div class="field"><label for="set-token-field">输出长度参数</label><select id="set-token-field"><option value="max_tokens">max_tokens</option><option value="max_completion_tokens">max_completion_tokens</option></select></div>
+        <div class="field"><label><input type="checkbox" id="set-stream-usage" /> 流式请求附带用量选项</label></div>
+        <p class="hint">若接口不接受 stream_options，可关闭用量选项。</p>
+      </div>
+    </details>
+    <div class="field"><label for="set-timeout">等待超时（秒）</label><input id="set-timeout" type="number" min="10" max="300" step="10" /></div>
+    </section>
+    <section id="settings-data" role="tabpanel" aria-labelledby="tab-data" hidden>
+      <h3>备份与恢复</h3><p class="hint">备份包含聊天、学习记录、收藏、陪学记忆和模型配置，不包含模型 Key。备份文件中可能含有你的私人对话，请妥善保管。</p>
+      <div class="actions"><button id="btn-backup" class="secondary">导出完整备份</button><button id="btn-pick-backup" class="ghost">选择备份文件</button></div>
+      <div id="backup-preview" hidden><p id="backup-summary" class="hint"></p><div class="field"><label><input type="checkbox" id="backup-settings" /> 同时恢复外观、陪学偏好并合并模型配置</label></div><button id="btn-import-backup" class="primary">合并导入</button></div>
+      <p id="backup-status" class="hint" role="status"></p>
+      <p id="data-storage-hint" class="hint">聊天保存在当前浏览器。清理浏览器数据或换设备前，请先导出备份。回收站可在对话列表中打开。</p>
+      <button id="btn-clear-save" class="ghost">清空聊天记录</button>
+    </section>
+    <div class="actions settings-actions">
+      <button id="btn-save-settings" class="primary">保存</button>
+    </div>
   </dialog>
 
   <!-- ============ 统计 ============ -->
   <dialog id="stats-dialog">
-    <h2>统计</h2>
-    <p class="hint" id="bank-info"></p>
+    <h2>学习统计</h2>
     <p class="hint" id="question-bank-info"></p>
-    <p class="hint">「最高通过」是该难度下单局最高的通过挑战数；「累计通过」含正在进行的这一局。</p>
-    <table class="stats" id="stats-table"></table>
+    <p class="hint" id="learning-stats"></p>
     <div class="actions" style="margin-top:14px">
       <button id="btn-close-stats" class="primary">关闭</button>
-      <button id="btn-reset-stats" class="ghost">清空统计</button>
     </div>
   </dialog>
 

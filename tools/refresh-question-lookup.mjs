@@ -1,7 +1,6 @@
 // 为题库生成内联查表。运行：node tools/refresh-question-lookup.mjs
 //
 // 背景：src/content/cet4-questions.js 原本 import 全量词库（4048 词 / 258 KB）只为查
-// 其中一百多个词的释义。题库在聊天模式下必用，而全量词库只有拼单词模式才用得到，
 // 于是每次打开页面都要白拉 258 KB。本工具把那批词抽成内联表，切断这条依赖。
 //
 // 什么时候要重跑：往 EXTRA_SEEDS 里加了新 seed 之后。
@@ -50,7 +49,6 @@ const block = `${BEGIN}
 // 内联查表：只收题库真正用到的那批词，不含全量词库。
 //
 // 为什么不全量 import cet4.js：那是 4048 词 / 258 KB，而这里只需要其中 ${Object.keys(lookup).length} 个词的词性与释义。
-// 题库在聊天模式下必用，全量词库只有拼单词模式才用得到——为了这些查表把 258 KB 拉进首屏不划算。
 //
 // 新增 seed 之后跑 node tools/refresh-question-lookup.mjs 重新生成本表；
 // 漏词会被 tests/run.mjs 的「题库查表覆盖」用例拦下。

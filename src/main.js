@@ -1,44 +1,21 @@
-// 编排层：把内容、引擎、网关、存储、UI 串起来。
-// 这里只做流程编排；难度、失败上限、万能词发放、统计全部由代码执行，不交给模型。
-
-import { usableMemes } from './content/memes.js';
-import {
-  JUDGE_SYSTEM, buildSceneSystem,
-  buildSceneUserMessage, buildJudgeUserMessage,
-  SCENE_FLOOR_CHARS, prefillFor,
-} from './content/prompts.js';
-import { DIFFICULTIES, DEFAULT_DIFFICULTY, getDifficulty } from './content/difficulty.js';
-import { buildLetterPool } from './engine/letters.js';
-// 全量词库（258 KB）不在这里静态加载：它只有拼单词模式用得到，
-// 而聊天模式是默认项。静态 import 会让每个聊天用户白拉这 258 KB。
-let wordbankMod = null;
-async function loadWordbank() {
-  if (!wordbankMod) wordbankMod = await import('./engine/wordbank.js');
-  return wordbankMod;
-}
-import { RetryableError, normalizeScene, normalizeJudge } from './engine/judge.js';
-import {
-  createRun, setScene, toggleTile, clearSelection, undoSelection, selectedWord,
-  reroll, commitAttempt, applyVerdict, wildcardSubmit, pickWildcardWord,
-  failureLimitOf, failuresLeft, wildcardsLeft,
-} from './engine/state.js';
-import { emptyStats, commitRun, viewStats } from './engine/stats.js';
-import { callJson, emptyProfile, normalizeModelProfile, PROFILE_PRESETS, probe, modelReadiness, normalizeEndpoint } from './gateway/model.js';
+import { copyText } from './platform/runtime.js';
+import { emptyProfile, normalizeModelProfile, PROFILE_PRESETS, API_FORMATS, probe, modelReadiness, normalizeEndpoint } from './gateway/model.js';
 import {
   DEFAULT_LIMITS, clampLimits,
 } from './engine/limits.js';
 import {
-  loadRun, saveRun, clearRun, loadProfile, saveProfile, storageAvailable,
-  loadStats, saveStats, clearStats,
+  loadProfile, saveProfile, storageAvailable,
   loadChatSession, saveChatSession, clearChatSession,
   loadSessionList, setCurrentSession, deleteChatSession, sweepOrphanMessages,
   loadUserProfile, saveUserProfile, loadMode, saveMode, MODES,
   loadFaceStyle, saveFaceStyle,
 } from './storage/save.js';
-import { renderLetters, renderHud, renderScene, renderVerdict, toast } from './ui/letters-panel.js';
+import { RetryableError } from './engine/judge.js';
+import { learningSummary } from './engine/learning.js';
 import { buildChatPrompt } from './content/chat.js';
 import { emotionPromptList, resolveFace, lastFace } from './engine/emotions.js';
 import { localMediaUrl } from './platform/media.js';
+import { SCENE_PATHS } from './content/scenes.js';
 import { ASSET_MANIFEST } from './content/assets.js';
 import { FACE_STYLES, DEFAULT_FACE_STYLE, CHARACTER_AVATAR_PATH } from './content/emotions.js';
 import {
@@ -55,13 +32,21 @@ import {
 } from './ui/chat.js';
 import { prepareUserTurn, generateChatTurn, replyAppliesTo, retainBodiesAfterSaveFailure } from './app/chat-turn.js';
 import { recordRequest } from './app/request-record.js';
+import { createLearningController } from './app/learning.js';
+import { drawQuestion } from './engine/questions.js';
+import { initResponsiveUI } from './ui/responsive.js';
+import { initLayout } from './ui/layout.js';
+import { initTutorial } from './ui/tutorial.js';
+import { initClientSettings, downloadFile } from './ui/client-settings.js';
+import { updateStreaming } from './ui/chat.js';
+import { companionSegment, forkConversation, conversationMarkdown, plainMessageText } from './engine/client.js';
+import { loadDraft, saveDraft, clearDrafts } from './storage/client.js';
+import { initSelectionSpeech, autoReadReply, stopReading } from './ui/speech.js';
 
 const $ = (id) => document.getElementById(id);
+const NAV_IDS = { learn: 'nav-learn', library: 'nav-library', practice: 'nav-practice', chat: 'nav-chat' };
 
-let run = null;
 let profile = emptyProfile();
-let stats = emptyStats();
-let busy = false;
 
 // 对话模式
 let mode = 'chat';
@@ -69,342 +54,38 @@ let session = null;
 let userProfile = null;
 let chatBusy = false;
 let faceStyle = DEFAULT_FACE_STYLE;
+let learning = null;
+let responsive = null;
+let tutorial = null;
+let client = null;
+let replyController = null;
+let partialReply = '';
+let draftTimer = null;
 
-/* ---------------- 渲染 ---------------- */
-
-function currentScene() {
-  return run?.current?.scene || run?.lastScene || null;
+function persistDraft() {
+  clearTimeout(draftTimer);
+  if (!session) return true;
+  try { saveDraft(session.id, $('chat-input').value); $('draft-status').textContent = $('chat-input').value ? '草稿已保存' : ''; return true; }
+  catch { $('draft-status').textContent = '草稿未能保存，请复制后再离开'; return false; }
 }
 
-function render() {
-  const activeRun = run && !run.committed ? run : null;
-  renderHud({
-    els: {
-      scene: $('hud-scene'), turns: $('hud-turns'), passed: $('hud-passed'),
-      fail: $('hud-fail'), wildcard: $('hud-wildcard'),
-      difficulty: $('hud-difficulty'), tier: $('hud-tier'),
-    },
-    run,
-    failuresLeft: run ? failuresLeft(run) : Infinity,
-    wildcardsLeft: run ? wildcardsLeft(run) : 0,
-    difficultyLabel: run ? getDifficulty(run.difficulty).label : '',
-  });
-
-  renderScene({
-    textEl: $('scene-text'),
-    objectiveWrap: $('scene-objective'),
-    objectiveText: $('objective-text'),
-    tags: { mode: $('tag-mode'), shell: $('tag-shell'), meme: $('tag-meme') },
-    scene: currentScene(),
-    loading: busy && !currentScene(),
-    stale: !run?.current && Boolean(run?.lastScene),
-  });
-
-  renderLetters({
-    tileHost: $('tiles'),
-    wordline: $('wordline'),
-    run,
-    busy,
-    onToggle: onToggleTile,
-  });
-
-  renderVerdict({
-    paneEl: $('verdict-card'),
-    titleEl: $('verdict-title'),
-    narrativeEl: $('verdict-narrative'),
-    feedbackEl: $('verdict-feedback'),
-    detailEl: $('verdict-detail'),
-    verdict: run?.lastVerdict || null,
-  });
-
-  const over = Boolean(run?.over);
-  $('gameover').classList.toggle('hidden', !over);
-  if (over) {
-    $('gameover-text').textContent =
-      `在「${getDifficulty(run.difficulty).label}」难度下失败 ${run.failures} 次，副本终止。`
-      + `本局通过 ${run.passedChallenges} 个挑战，输出 ${run.outputTurns} 轮。`;
-  }
-
-  const primary = $('btn-submit');
-  primary.textContent = over ? '本局已结束' : (run?.current ? '确定' : '继续下一场景');
-  primary.disabled = busy || over;
-
-  const noWildcard = !run || over || wildcardsLeft(run) <= 0;
-  for (const id of ['btn-undo', 'btn-clear', 'btn-dice']) {
-    $(id).disabled = busy || !run?.current || over;
-  }
-  $('btn-wildcard').disabled = busy || !run?.current || noWildcard;
-  $('btn-wildcard').textContent = wildcardsLeft(run) === Infinity ? '万能词 ∞' : `万能词 ${wildcardsLeft(run) || 0}`;
-
-  $('btn-stats').disabled = false;
-}
-
-function setBusy(v) {
-  busy = v;
-  syncInteractionLocks();
-  render();
+function restoreDraft() {
+  try { $('chat-input').value = loadDraft(session?.id); $('draft-status').textContent = $('chat-input').value ? '已恢复草稿' : ''; }
+  catch (error) { chatToast(error.message, { error:true }); }
+  responsive?.sizeComposer();
 }
 
 function syncInteractionLocks() {
-  for (const id of ['btn-save-settings', 'btn-clear-save', 'btn-pf-save', 'btn-restart', 'btn-reset-stats']) {
-    $(id).disabled = busy || chatBusy;
-  }
-}
-
-/* ---------------- 一回合的链路 ---------------- */
-
-async function callModel(system, user, kind) {
-  const { data } = await callJson(
-    { ...profile },
-    { system, user, prefill: prefillFor(kind, profile.usePrefill !== false), requestContext: { sessionId: run?.id, promptVersion: `wordblade-${kind}` } },
-  );
-  return data;
-}
-
-/**
- * 抽词 → 出题 → 发牌。
- * 词源完全由代码决定：从四级核心/热点词库抽取主题词与标准答案，不让模型凭空想词。
- * 只有出题这一步交给模型，不合格就整体重来，最多三次。
- */
-async function advance() {
-  if (busy || run.over) return;
-  setBusy(true);
-
-  let words;
-  try {
-    const { drawWords } = await loadWordbank();
-    words = drawWords({
-      usedWords: run.usedWords,
-      hotOnly: run.tier === '基础', // 基础档只抽高频词，进阶档放开到全部四级核心词
-      count: 2,
-    });
-  } catch (err) {
-    setBusy(false);
-    toast(`抽词失败：${err.message}`, { error: true, ms: 7000 });
-    return;
-  }
-
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      const sceneRaw = await callModel(
-        buildSceneSystem(usableMemes()),
-        buildSceneUserMessage({ tier: run.tier, words, usedScenes: run.usedScenes }),
-        'scene',
-      );
-      const scene = normalizeScene(sceneRaw, { words, minChars: SCENE_FLOOR_CHARS });
-
-      const pool = buildLetterPool(scene.words.map((w) => w.word));
-      run = setScene(run, { scene, pool });
-      saveRun(run);
-      setBusy(false);
-      return;
-    } catch (err) {
-      const last = attempt === 3;
-      if (!last && err instanceof RetryableError) {
-        toast(`第 ${attempt} 次出题不合格（${err.kind}），重试中…`);
-        continue;
-      }
-      setBusy(false);
-      toast(describeError(err), { error: true, ms: 7000 });
-      return;
-    }
-  }
-}
-
-async function submit() {
-  if (busy) return;
-  if (!run?.current) {
-    toast('还没有进行中的场景，点「继续下一场景」开始');
-    return;
-  }
-  const word = selectedWord(run);
-  if (!word) {
-    toast('先从字母面板拼出一个单词');
-    return;
-  }
-  await runJudge({ word, viaWildcard: false });
-}
-
-/**
- * 万能词：从本轮目标词里随机取一个作为预设的正确答案，直接发给模型。
- * 不强制成功——目标词本来就该通过判定，让模型正常判。
- */
-async function submitWildcard() {
-  if (busy) return;
-  if (!run?.current) {
-    toast('还没有进行中的场景，点「继续下一场景」开始');
-    return;
-  }
-  const word = pickWildcardWord(run.current.scene);
-  if (!word) {
-    toast('本轮没有可用的预设答案', { error: true });
-    return;
-  }
-  await runJudge({ word, viaWildcard: true });
-}
-
-/**
- * 判定的关键是：技术性失败必须回滚，不能算玩家的输出轮数、也不计失败次数。
- * 只有拿到语义合法的判定，才把这次提交写进存档。
- * 模型偶尔漏字段或返回不合法 JSON 是常态，所以这里自带重试。
- */
-async function runJudge({ word, viaWildcard }) {
-  const before = run;
-  let next = viaWildcard ? wildcardSubmit(run, word) : commitAttempt(run, word);
-  setBusy(true);
-
-  let lastErr = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      const raw = await callModel(
-        JUDGE_SYSTEM,
-        buildJudgeUserMessage({ scene: next.current.scene, word }),
-        'judge',
-      );
-      const verdict = normalizeJudge(raw, { word });
-
-      if (verdict.passed) {
-        run = applyVerdict(next, verdict);
-        settleIfOver();
-        saveRun(run);
-        setBusy(false);
-        const granted = grantedWildcard(run);
-        toast(granted
-          ? `应对生效，通过 ${run.passedChallenges} 次，奖励 1 个万能词`
-          : (viaWildcard ? '万能词送出预设答案，点「继续下一场景」开始新副本' : '应对生效，点「继续下一场景」开始新副本'));
-        return;
-      }
-
-      // 不通过：按难度计失败；未触顶则重发手牌，触顶则本局结束
-      const nextPool = buildLetterPool(next.current.scene.words.map((w) => w.word));
-      run = applyVerdict(next, verdict, { nextPool });
-      settleIfOver();
-      saveRun(run);
-      setBusy(false);
-      if (run.over) {
-        toast(`失败 ${run.failures} 次，本局结束`, { error: true, ms: 6000 });
-      } else {
-        const left = failuresLeft(run);
-        toast(Number.isFinite(left)
-          ? `未能应对，还剩 ${left} 次失败机会，手牌已重发`
-          : '未能应对，手牌已重发，再试一次');
-      }
-      return;
-    } catch (err) {
-      lastErr = err;
-      if (err instanceof RetryableError && attempt < 3) {
-        toast(`模型回复不合格（${err.kind}），第 ${attempt + 1} 次重试中…`);
-        continue;
-      }
-      break;
-    }
-  }
-
-  run = before; // 回滚：技术性失败不计轮数、不计失败、不改手牌、不消耗道具
-  setBusy(false);
-  toast(describeError(lastErr), { error: true, ms: 7000 });
-}
-
-/** 判断这一次通过是否刚好触发万能词奖励（仅用于提示）。 */
-function grantedWildcard(after) {
-  const every = getDifficulty(after.difficulty).wildcardGrantEvery;
-  return Boolean(every) && after.passedChallenges % every === 0;
-}
-
-/* ---------------- 统计 ---------------- */
-
-/**
- * 本局结束时自动结算一次统计，并打上 committed 标记防止重复计数
- * （否则刷新页面后再点重开会把同一局算两遍）。
- */
-function settleIfOver() {
-  if (!run || run.committed || !run.over) return run;
-  stats = commitRun(stats, run.difficulty, run);
-  saveStats(stats);
-  run = { ...run, committed: true };
-  saveRun(run);
-  return run;
-}
-
-/** 主动结算当前这一局（重开、换难度、清档前调用），并打上已结算标记防止重复计数。 */
-function commitCurrentRun() {
-  if (!run || run.committed) return;
-  stats = commitRun(stats, run.difficulty, run);
-  saveStats(stats);
-  run = { ...run, committed: true };
-  saveRun(run);
+  for (const id of ['btn-save-settings', 'btn-clear-save']) $(id).disabled = chatBusy;
 }
 
 function renderStats() {
-  const activeRun = run && !run.committed ? run : null;
-  // 词库是按需加载的：聊天模式下大概率还没加载，这时不为了显示一行统计把它拉下来
-  if (wordbankMod) {
-    const bank = wordbankMod.describeBank();
-    $('bank-info').textContent =
-      `词库（拼单词模式，已加载）：四级核心 ${bank.total} 词，其中高频（COCA 前 ${bank.hotRankMax} 名）${bank.hot} 词；`
-      + `词长 ${bank.minLen}–${bank.maxLen} 字母。`;
-  } else {
-    $('bank-info').textContent =
-      '词库（拼单词模式）：尚未加载。它约 258 KB，只在切到拼单词模式时才按需拉取，'
-      + '这样聊天模式的首屏不必为它买单。';
-  }
   const qb = describeQuestionBank();
-  const types = Object.entries(qb.byType).map(([k, v]) => `${k} ${v}`).join(' / ');
-  const diffs = Object.entries(qb.byDifficulty).map(([k, v]) => `${k} ${v}`).join(' / ');
-  $('question-bank-info').textContent =
-    `题库（对话模式）：${qb.total} 题（${types}；${diffs}），批次 ${qb.id}。`;
-  const head = '<tr><th>难度</th><th>最高通过</th><th>累计通过</th><th>已结算局数</th><th>最高输出轮数</th></tr>';
-  const rows = DIFFICULTIES.map((d) => {
-    const v = viewStats(stats, d.id, activeRun);
-    const cls = activeRun && activeRun.difficulty === d.id ? ' class="active"' : '';
-    return `<tr${cls}><td>${d.label}</td><td>${v.bestPassed}</td><td>${v.totalPassed}</td><td>${v.runs}</td><td>${v.bestTurns}</td></tr>`;
-  }).join('');
-  $('stats-table').innerHTML = head + rows;
-}
-
-/* ---------------- 交互 ---------------- */
-
-function onToggleTile(tileId) {
-  if (busy || !run?.current || run.over) return;
-  run = toggleTile(run, tileId);
-  render();
-}
-
-function onReroll() {
-  if (busy || !run?.current || run.over) return;
+  $('question-bank-info').textContent = qb.total + ' 道内置题。';
   try {
-    const pool = buildLetterPool(run.current.scene.words.map((w) => w.word));
-    run = reroll(run, { pool });
-    saveRun(run);
-    render();
-  } catch (err) {
-    toast(err.message, { error: true });
-  }
-}
-
-async function restartRun() {
-  if (busy || chatBusy) return;
-  commitCurrentRun();
-  run = createRun({ tier: run?.tier || '基础', difficulty: run?.difficulty || DEFAULT_DIFFICULTY });
-  saveRun(run);
-  render();
-  await advance();
-}
-
-/* ---------------- 设置 ---------------- */
-
-function fillDifficultySelect() {
-  const sel = $('difficulty');
-  sel.replaceChildren(...DIFFICULTIES.map((d) => {
-    const o = document.createElement('option');
-    o.value = d.id;
-    o.textContent = `${d.label} · ${d.note}`;
-    return o;
-  }));
-}
-
-function showDifficultyNote() {
-  $('difficulty-note').textContent = getDifficulty($('difficulty').value).note;
+    const summary = learningSummary(learning.state());
+    $('learning-stats').textContent = '练过 ' + summary.words + ' 个词，完成 ' + summary.attempts + ' 次作答，独立答对 ' + summary.independent + ' 次。当前有 ' + summary.due + ' 项到期复习。';
+  } catch (error) { $('learning-stats').textContent = error.message; }
 }
 
 function fillFaceStyleSelect() {
@@ -440,17 +121,17 @@ function changeFaceStyle() {
   if (session) renderChat();
 }
 
-function openSettings() {
+function openSettings({ tab = 'general', firstTime = false } = {}) {
+  stopReading();
+  if (learning && !learning.saveDraft()) return;
+  responsive?.closePanels();
   $('endpoint').value = profile.endpoint || '';
   $('model').value = profile.model || '';
   $('apiKey').value = profile.apiKey || '';
-  $('usePrefill').checked = profile.usePrefill !== false;
   $('set-provider').value = profile.provider || 'custom';
   $('set-cache-mode').value = profile.cacheMode || 'auto';
   $('set-debug-summary').checked = session?.debugSummaries === true;
   $('preset').value = PROFILE_PRESETS.find((p) => p.endpoint === profile.endpoint && p.model === profile.model)?.id || 'custom';
-  $('tier').value = run?.tier || '基础';
-  $('difficulty').value = run?.difficulty || DEFAULT_DIFFICULTY;
   $('set-mode').value = mode;
   $('set-everyn').value = String(session?.everyN || DEFAULT_EVERY_N);
   $('set-qdiff').value = session?.difficulty || 'all';
@@ -467,9 +148,17 @@ function openSettings() {
   $('face-style-status').textContent = '';
   showEndpointNote();
   showLimitsNote();
-  showDifficultyNote();
   showFaceStylePreview();
+  client?.open(session);
+  profileFirstTime = firstTime;
+  fillProfileForm({ nameEl: $('pf-name'), genderEl: $('pf-gender'), customEl: $('pf-custom'), customWrap: $('pf-custom-wrap'), profile: userProfile });
+  $('pf-error').textContent = '';
+  $('btn-save-settings').textContent = firstTime ? '保存并开始对话' : '保存';
+  client?.showTab(tab);
   $('settings').showModal();
+  $('settings').scrollTop = 0;
+  $('btn-settings').setAttribute('aria-expanded', 'true');
+  if (tab === 'profile') $('pf-name').focus();
 }
 
 function showLimitsNote() {
@@ -485,15 +174,15 @@ function showLimitsNote() {
     : `自动裁剪已关闭。上下文预算约 ${lim.maxContextTokens.toLocaleString('en-US')} token；已有小总结继续保留。`;
 }
 
-/** 边填边显示「最终会请求哪个地址」，让归一化可见而不是魔法。 */
 function showEndpointNote() {
+  $('test-result').textContent = '';
   const raw = $('endpoint').value.trim();
   const note = $('endpoint-note');
   if (!raw) {
     note.textContent = '';
     return;
   }
-  const url = normalizeEndpoint(raw);
+  const url = normalizeEndpoint(raw, $('set-api-format').value, $('model').value, $('set-stream').checked);
   if (url === raw.replace(/\/+$/, '')) {
     note.textContent = `将请求：${url}`;
   } else {
@@ -513,6 +202,10 @@ function clampEveryN(raw) {
 
 function initSettings() {
   const preset = $('preset');
+  const option = (value, text) => { const o=document.createElement('option'); o.value=value; o.textContent=text; return o; };
+  const providers = new Map(PROFILE_PRESETS.map(p=>[p.provider, p.label.split(' · ')[0]]));
+  $('set-provider').replaceChildren(...[...providers].map(([id,label])=>option(id,label)));
+  $('set-api-format').replaceChildren(...Object.entries(API_FORMATS).map(([id,label])=>option(id,label)));
   preset.replaceChildren(...PROFILE_PRESETS.map((p) => {
     const o = document.createElement('option');
     o.value = p.id;
@@ -523,32 +216,45 @@ function initSettings() {
     const p = PROFILE_PRESETS.find((x) => x.id === preset.value);
     $('set-provider').value = p?.provider || p?.id || 'custom';
     if (p && p.endpoint) {
+      let sameOrigin = false;
+      try { sameOrigin = new URL($('endpoint').value).origin === new URL(p.endpoint).origin; } catch {}
+      if (!sameOrigin) $('apiKey').value = '';
       $('endpoint').value = p.endpoint;
       $('model').value = p.model;
+      $('set-api-format').value = p.apiFormat;
+      $('set-auth-mode').value = p.authMode;
+      $('set-cache-mode').value = p.cacheMode;
+      $('set-send-temperature').checked = p.sendTemperature;
+      $('set-stream-usage').checked = p.streamUsage;
+      $('set-json-mode').value = p.jsonMode;
+      $('set-token-field').value = p.tokenField;
+      syncProtocolFields();
       showEndpointNote();
     }
   });
 
-  fillDifficultySelect();
   fillFaceStyleSelect();
-  $('difficulty').addEventListener('change', showDifficultyNote);
   $('set-face-style').addEventListener('change', changeFaceStyle);
   for (const id of ['set-limits-enable', 'set-renderlimit', 'set-historylimit', 'set-maxcontext']) {
     $(id).addEventListener('change', showLimitsNote);
   }
-  $('endpoint').addEventListener('input', showEndpointNote);
+  function syncProtocolFields() {
+    const format=$('set-api-format').value;
+    $('chat-compatibility').hidden=format!=='chat';
+    $('set-temperature').disabled=!$('set-send-temperature').checked;
+    $('set-temperature').max=format==='anthropic'?'1':'2';
+    if(format==='anthropic' && Number($('set-temperature').value)>1) $('set-temperature').value='1';
+    $('temperature-label').textContent=`表达随机性（0–${format==='anthropic'?'1':'2'}）`;
+    $('set-json-mode').disabled=format==='anthropic';
+  }
+  for (const id of ['endpoint','model']) $(id).addEventListener('input', showEndpointNote);
+  for (const id of ['set-api-format','set-stream','set-send-temperature']) $(id).addEventListener('change',()=>{syncProtocolFields();showEndpointNote();});
 
   $('btn-test').addEventListener('click', async () => {
     const out = $('test-result');
     out.textContent = '正在测试…';
     try {
-      const r = await probe({
-        endpoint: $('endpoint').value.trim(),
-        model: $('model').value.trim(),
-        apiKey: $('apiKey').value.trim(),
-        provider: $('set-provider').value,
-        cacheMode: $('set-cache-mode').value,
-      });
+      const r = await probe(client.readProfile());
       out.textContent = `连接成功。模型返回：${r.preview}`;
     } catch (err) {
       out.textContent = `连接失败：${describeError(err)}`;
@@ -556,25 +262,29 @@ function initSettings() {
   });
 
   $('btn-save-settings').addEventListener('click', async () => {
-    if (busy || chatBusy) return;
-    const nextProfile = normalizeModelProfile({
-      endpoint: $('endpoint').value.trim(),
-      model: $('model').value.trim(),
-      apiKey: $('apiKey').value.trim(),
-      usePrefill: $('usePrefill').checked,
-      provider: $('set-provider').value,
-      cacheMode: $('set-cache-mode').value,
-    });
-    if (!saveProfile(nextProfile)) {
+    if (chatBusy || learning?.isBusy()) { chatToast('先等当前评价完成。'); return; }
+    const rawProfile = readProfileForm({ nameEl: $('pf-name'), genderEl: $('pf-gender'), customEl: $('pf-custom') });
+    let nextUserProfile = userProfile;
+    if (profileFirstTime || profileComplete(userProfile) || rawProfile.name || rawProfile.customGender) {
+      const error = profileFormError({ nameEl: $('pf-name'), genderEl: $('pf-gender'), customEl: $('pf-custom') });
+      if (error) { $('pf-error').textContent = error; client.showTab('profile'); $('pf-name').focus(); return; }
+      nextUserProfile = normalizeProfile(createProfile(rawProfile));
+    }
+    let clientSettings;
+    try { clientSettings = client.save(); } catch(error) { chatToast(error.message,{error:true}); return; }
+    if (!saveProfile(clientSettings.profile)) {
       chatToast('模型设置未能保存，请检查浏览器存储空间与权限', { error: true });
       return;
     }
-    profile = nextProfile;
+    profile = clientSettings.profile;
 
-    // 对话模式参数
-    if (session) {
+    const settingsSession = session || createSession({ profile: userProfile });
+    {
       const nextSession = {
-        ...session,
+        ...settingsSession,
+        profile: nextUserProfile,
+        modelId: clientSettings.modelId,
+        assistantConfig: clientSettings.assistantConfig,
         everyN: clampEveryN($('set-everyn').value),
         difficulty: $('set-qdiff').value || 'all',
         debugSummaries: $('set-debug-summary').checked,
@@ -588,7 +298,7 @@ function initSettings() {
           renderLimit: $('set-renderlimit').value,
           historyLimit: $('set-historylimit').value,
           maxContextTokens: $('set-maxcontext').value,
-          trimRatio: session.limits?.trimRatio ?? DEFAULT_LIMITS.trimRatio,
+          trimRatio: settingsSession.limits?.trimRatio ?? DEFAULT_LIMITS.trimRatio,
         }),
       };
       // 改了「每几题休息」就重置本周期计数，避免刚改完就立刻触发或永远不触发
@@ -596,43 +306,35 @@ function initSettings() {
       if (!persistSession(nextSession)) return;
       session = nextSession;
     }
+    if (nextUserProfile && !saveUserProfile(nextUserProfile)) {
+      $('pf-error').textContent = '档案未能保存，请检查本机存储空间后重试。'; client.showTab('profile'); return;
+    }
+    userProfile = nextUserProfile;
 
     // 玩法模式切换
-    const nextMode = $('set-mode').value === MODES.wordblade ? MODES.wordblade : MODES.chat;
-    const modeChanged = nextMode !== mode;
+    const nextMode = Object.values(MODES).includes($('set-mode').value) ? $('set-mode').value : MODES.learn;
+    if (!saveMode(nextMode)) { chatToast('页面偏好未能保存，请检查浏览器存储空间与权限。', { error: true }); return; }
     mode = nextMode;
-    saveMode(mode);
-
-    // 拼单词模式的档位
-    const tier = $('tier').value;
-    const difficulty = $('difficulty').value;
-    const runChanged = run && (tier !== run.tier || difficulty !== run.difficulty);
-    if (runChanged) {
-      commitCurrentRun();
-      run = createRun({ tier, difficulty });
-      saveRun(run);
-    }
 
     $('settings').close();
     applyMode();
-    if (mode === MODES.wordblade) {
-      if (modeChanged || runChanged) { await bootWordblade(); } else if (!run.current && !run.over) { await advance(); }
-    } else {
+    if (mode === MODES.chat) {
       if (!session) bootChat();
       else renderChat();
-    }
+    } else learning?.setPage(mode);
   });
 
   $('btn-clear-save').addEventListener('click', async () => {
-    if (busy || chatBusy) return;
+    if (chatBusy || learning?.isBusy()) return;
+    if (!window.confirm('清空所有聊天记录？此操作无法撤销，学习记录和收藏会保留。')) return;
     if (!clearChatSession()) {
       chatToast('清空失败，原存档未能全部移除，请检查浏览器存储权限', { error: true });
       return;
     }
-    commitCurrentRun();
-    clearRun();
-    run = createRun({ tier: $('tier').value || '基础', difficulty: $('difficulty').value || DEFAULT_DIFFICULTY });
-    saveRun(run);
+    clearTimeout(draftTimer);
+    $('chat-input').value = '';
+    let draftsCleared = true;
+    try { clearDrafts(); } catch { draftsCleared = false; }
     session = createSession({
       profile: userProfile,
       everyN: clampEveryN($('set-everyn').value),
@@ -641,45 +343,33 @@ function initSettings() {
     const saved = persistSession(session);
     $('settings').close();
     applyMode();
-    if (mode === MODES.wordblade) {
-      render();
-      await advance();
-    } else {
-      renderChat();
-      if (saved) chatToast('对话已清空，从头再聊一次');
-    }
+    if (mode === MODES.chat) renderChat();
+    else learning.render();
+    if (saved) chatToast(draftsCleared ? '对话已清空，学习记录已保留' : '对话已清空，但草稿未能移除，请检查浏览器存储权限。', { error:!draftsCleared });
   });
 }
 
 function initStats() {
   $('btn-stats').addEventListener('click', () => { renderStats(); $('stats-dialog').showModal(); });
-  $('btn-stats-2').addEventListener('click', () => { renderStats(); $('stats-dialog').showModal(); });
   $('btn-close-stats').addEventListener('click', () => $('stats-dialog').close());
-  $('btn-reset-stats').addEventListener('click', () => {
-    if (busy || chatBusy) return;
-    clearStats();
-    stats = emptyStats();
-    renderStats();
-    toast('统计已清空');
-  });
 }
 
-/* ---------------- 错误提示 ---------------- */
+
 
 function describeError(err) {
   if (err instanceof RetryableError) {
     const map = {
-      'no-key': '还没有填写 API Key，点右上角「设置」',
+      'no-key': '还没有填写 API Key，请打开导航栏中的「设置」',
       'no-endpoint': '还没有配置模型接口地址',
       'invalid-endpoint': '接口地址无效，请使用完整的 http 或 https 地址',
       cancelled: '请求已取消，可以重新生成',
       length: '回复达到长度上限而中断，请提高上下文预算或让回复更简短后重试',
-      network: '连不上这个地址。检查接口地址是否正确、是否需要代理；如果页面是 https 而接口是 http，浏览器会直接拦掉',
-      timeout: '请求超时。场景较长时出题会比较慢，可以重试或换更快的模型',
-      http: '接口返回了错误。常见原因：Key 不对、模型名写错、余额不足、该端点不允许浏览器直连（CORS）',
+      network: '连不上这个地址。请检查网络、代理与地址，并确认端点允许浏览器跨域访问（CORS）；HTTPS 页面不能请求普通 HTTP 远程端点',
+      timeout: '请求超时，可以重试或检查模型连接',
+      http: err.message,
       'not-json': '接口返回的不是 JSON，通常说明地址填的是网页而不是 API 端点',
       empty: '模型没有返回内容，可以重试',
-      schema: '模型返回的字段不符合协议（多为漏字段），已自动重试',
+      schema: err.message,
       contradiction: '模型返回的字段自相矛盾，已自动重试',
     };
     return map[err.kind] || err.message;
@@ -715,11 +405,16 @@ function applyMode() {
   // chat 模式下锁死页面高度，让滚轮落在对话区内部而不是整页
   document.body.classList.toggle('chat-mode', isChat);
   $('view-chat').classList.toggle('hidden', !isChat);
-  $('view-wordblade').classList.toggle('hidden', isChat);
+  $('view-learn').classList.toggle('hidden', isChat);
   $('hud-chat-group').classList.toggle('hidden', !isChat);
-  $('hud-wordblade-group').classList.toggle('hidden', isChat);
   // 侧栏切换按钮只在窄屏有意义，宽屏侧栏常驻
-  $('btn-side').classList.toggle('hidden', !isChat || window.innerWidth > 860);
+  $('btn-side').classList.toggle('hidden', !isChat);
+  for (const value of Object.values(MODES)) {
+    $(NAV_IDS[value]).classList.toggle('active', value === mode);
+    $(NAV_IDS[value]).setAttribute('aria-current', value === mode ? 'page' : 'false');
+  }
+  $('btn-chat-practice').classList.toggle('hidden', !isChat);
+  responsive?.sync();
 }
 
 function renderChat() {
@@ -732,6 +427,9 @@ function renderChat() {
     onSelect: switchSession,
     onNew: newSession,
     onDelete: removeSession,
+    onAction: sessionAction,
+    searchText: id => (loadChatSession(id)?.messages || []).map(m=>m.compacted ? m.summary || '' : m.text).join('\n'),
+    busy: chatBusy,
   });
 
   renderThread({
@@ -743,7 +441,10 @@ function renderChat() {
     faceFor,
     avatarSrc: localMediaUrl(CHARACTER_AVATAR_PATH),
     debugSummaries: session?.debugSummaries === true,
+    onMessageAction: messageAction,
   });
+  if (partialReply && chatBusy) updateStreaming($('chat-thread'), partialReply);
+  client?.syncChat(session?.modelId,session?.assistantConfig);
   const replies = session ? assistantReplyCount(session) : 0;
   $('hud-chat-turns').textContent = String(replies);
   $('hud-chat-mode').textContent = '对话';
@@ -767,6 +468,9 @@ function renderChat() {
 
   $('btn-chat-send').disabled = chatBusy;
   $('btn-chat-send').textContent = chatBusy ? '…' : '发送';
+  $('btn-chat-stop').hidden = !chatBusy;
+  $('btn-export-chat').disabled = chatBusy || !session;
+  learning?.attachChat(session);
 }
 
 /**
@@ -803,6 +507,9 @@ function bootChat() {
     session = createSession({ profile: userProfile, everyN: DEFAULT_EVERY_N, difficulty: 'all' });
     persistSession(session);
   }
+  if (session.deletedAt) { newSession(); return; }
+  profile = client?.profile(session.modelId) || profile;
+  restoreDraft();
   // 已有档案就统一注入到当前会话（会话自带档案时以会话为准）
   if (session.profile) userProfile = normalizeProfile(session.profile) || userProfile;
   else if (userProfile) {
@@ -812,22 +519,18 @@ function bootChat() {
 
   renderChat();
 
-  if (!profileComplete(userProfile)) {
+  if (!tutorial?.active && !profileComplete(userProfile)) {
     openProfile({ firstTime: true });
     return;
   }
-  if (!hasModel()) {
-    chatToast('还没配置模型端点，先点右上角「设置」');
+  if (!tutorial?.active && !hasModel()) {
+    chatToast('还没配置模型端点，请打开导航栏中的「设置」');
   }
 }
 
-/**
- * 发送。按钮不是直接发送——先由代码判断这一轮要不要插题：
- * 需要插题就抽一道，把题目与用户消息拼成一段文本，题目用 <Question> 包裹。
- * 对错由模型在对话里判断（按驾驶员确认），代码不判。
- */
+
 async function sendChat() {
-  if (chatBusy || busy) return;
+  if (chatBusy || learning?.isBusy()) return;
   if (!profileComplete(userProfile)) {
     openProfile({ firstTime: true });
     return;
@@ -846,10 +549,17 @@ async function sendChat() {
 
   setChatBusy(true);
   try {
-    const next = prepareUserTurn(session, text);
+    const next = prepareUserTurn(session, text, {
+      canAsk: !learning?.hasPending(session),
+      chooseQuestion: (opts) => drawQuestion({ ...opts, learning: learning?.state() }),
+    });
+    next.modelId = session.modelId || client.activeId();
+    next.assistantConfig = session.assistantConfig || client.companion();
     if (!persistSession(next)) return;
     session = next;
     input.value = '';
+    persistDraft();
+    responsive?.sizeComposer();
     renderChat();
     await generateReply();
   } catch (err) {
@@ -864,16 +574,26 @@ async function sendChat() {
  * 正常发送与「重新生成」都走这里，避免两份实现。
  */
 async function generateReply() {
+  stopReading();
   const snapshot = session;
+  replyController = new AbortController();
+  partialReply = '';
+  let frame = null;
   try {
     const system = buildChatPrompt(snapshot.profile, { emotionList: emotionPromptList() });
-    const next = await generateChatTurn(snapshot, system, { ...profile });
+    system.segments.push(companionSegment(snapshot.assistantConfig || client.companion()));
+    const next = await generateChatTurn(snapshot, system, { ...profile }, { signal: replyController.signal, onDelta: text => {
+      if (replyController?.signal.aborted) return;
+      partialReply = text;
+      if (frame === null) frame = requestAnimationFrame(()=>{frame=null;updateStreaming($('chat-thread'),partialReply);});
+    } });
     if (!replyAppliesTo(session, snapshot)) return false;
     if (!persistSession(next)) {
       session = retainBodiesAfterSaveFailure(snapshot, next);
       return false;
     }
     session = next;
+    autoReadReply(next.messages.at(-1)?.text);
     return true;
   } catch (err) {
     if (err.requestRecord && replyAppliesTo(session, snapshot)) {
@@ -883,6 +603,10 @@ async function generateReply() {
     }
     chatToast(describeError(err), { error: true, ms: 8000 });
     return false;
+  } finally {
+    if (frame !== null) cancelAnimationFrame(frame);
+    replyController = null;
+    partialReply = '';
   }
 }
 
@@ -891,7 +615,7 @@ async function generateReply() {
  * 不用重打一遍字，直接再请一次模型。
  */
 async function regenerateLast() {
-  if (chatBusy || busy) return;
+  if (chatBusy || learning?.isBusy()) return;
   if (!hasModel()) {
     chatToast('先配置模型端点和 Key', { error: true });
     openSettings();
@@ -913,9 +637,71 @@ async function regenerateLast() {
 
 /* ---------------- 多会话 ---------------- */
 
+function editDialog(title, value, multiline = false) {
+  return new Promise(resolve=>{
+    const dialog=document.createElement('dialog');dialog.className='text-editor';
+    const heading=document.createElement('h2');heading.textContent=title;
+    const form=document.createElement('form');form.method='dialog';
+    const input=document.createElement(multiline?'textarea':'input');input.value=value;input.required=true;input.maxLength=multiline?60000:40;input.setAttribute('aria-label',title);if(multiline)input.rows=9;
+    const actions=document.createElement('div');actions.className='actions';
+    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='取消';cancel.addEventListener('click',()=>dialog.close());
+    const save=document.createElement('button');save.type='submit';save.textContent=multiline?'另存分支并发送':'保存';save.className='primary';
+    actions.append(cancel,save);form.append(input,actions);dialog.append(heading,form);document.body.append(dialog);
+    let result=null;form.addEventListener('submit',event=>{event.preventDefault();if(!input.value.trim())return;result=input.value.trim();dialog.close();});
+    dialog.addEventListener('close',()=>{dialog.remove();resolve(result);},{once:true});dialog.showModal();input.focus();
+  });
+}
+
+async function messageAction(action,id) {
+  if(chatBusy)return;
+  const snapshot=session;
+  const message=snapshot?.messages.find(m=>m.id===id);if(!message)return;
+  try {
+    if(action==='copy') {
+      const text=plainMessageText(message);
+      await copyText(text);
+      chatToast('已复制');return;
+    }
+    const editText=action==='edit'?await editDialog('编辑消息 · 保留原对话',message.text,true):undefined;
+    if(editText===null || session!==snapshot || chatBusy)return;
+    if(!persistDraft())return;
+    const next=forkConversation(snapshot,id,{editText,regenerate:action==='regenerate'});
+    if(!persistSession(next))return;
+    session=next;profile=client.profile(session.modelId);restoreDraft();renderChat();
+    await regenerateLast();
+  } catch(error){chatToast(error.message,{error:true});}
+}
+
+async function sessionAction(action,id) {
+  if(chatBusy || learning?.isBusy())return;
+  try {
+    const current=session?.id===id;
+    const target=current?session:loadChatSession(id);if(!target)throw new Error('对话无法读取。');
+    if(action==='purge'){if(window.confirm('永久删除这段对话？无法撤销。'))removeSession(id);return;}
+    const changes={};
+    if(action==='rename'){const name=await editDialog('重命名对话',target.title);if(name===null)return;changes.title=name;changes.titleManual=true;}
+    if(action==='pin')changes.pinned=!target.pinned;
+    if(action==='archive')changes.archived=!target.archived;
+    if(action==='trash')changes.deletedAt=Date.now();
+    if(action==='restore'){changes.deletedAt=null;changes.archived=false;}
+    if(!persistDraft())return;
+    const next={...target,...changes,updatedAt:Date.now()};if(!persistSession(next))return;
+    if(current)session=next;else if(session)setCurrentSession(session.id);
+    if(current && action==='trash') {
+      const other=loadSessionList().sessions.find(s=>s.id!==id&&!s.deletedAt&&!s.archived);
+      if(other){session=loadChatSession(other.id);setCurrentSession(other.id);profile=client.profile(session.modelId);restoreDraft();}
+      else newSession();
+    }
+    renderChat();
+    if(action==='trash')chatToast('已移入回收站，可以随时恢复');
+  }catch(error){chatToast(error.message,{error:true});}
+}
+
 /** 新建会话。已填过档案就沿用它，省得每次重填。 */
 function newSession() {
   if (chatBusy) return;
+  stopReading();
+  if (!persistDraft()) return;
   if (session && !persistSession(session)) return;
   const next = createSession({
     profile: userProfile,
@@ -925,19 +711,25 @@ function newSession() {
     limits: session?.limits,
     debugSummaries: session?.debugSummaries === true,
   });
+  next.modelId = client.activeId();
+  next.assistantConfig = client.companion();
   if (!persistSession(next)) return;
   session = next;
+  profile = client.profile(session.modelId);
+  restoreDraft();
+  responsive?.closePanels();
   renderChat();
   chatToast('新开了一段对话');
 }
 
 function switchSession(id) {
   if (chatBusy || !id) return;
+  stopReading();
   if (session?.id === id) {
-    $('view-chat').classList.remove('side-open');
+    responsive?.closePanels({ restoreFocus: true });
     return;
   }
-  if (!persistSession(session)) return;
+  if (!persistDraft() || (session && !persistSession(session))) return;
   const next = loadChatSession(id);
   if (!next) {
     chatToast('这个对话读不出来了', { error: true });
@@ -948,7 +740,9 @@ function switchSession(id) {
     return;
   }
   session = next;
-  $('view-chat').classList.remove('side-open');
+  profile = client.profile(session.modelId);
+  restoreDraft();
+  responsive?.closePanels({ restoreFocus: true });
   renderChat();
 }
 
@@ -959,6 +753,8 @@ function removeSession(id) {
     chatToast('删除失败，存档可能已被其他页面修改，请刷新后重试', { error: true });
     return;
   }
+  let draftRemoved = true;
+  try { saveDraft(id, ''); } catch { draftRemoved = false; }
   if (wasCurrent) {
     const list = loadSessionList();
     session = list.currentId ? loadChatSession(list.currentId) : null;
@@ -968,7 +764,7 @@ function removeSession(id) {
     }
   }
   renderChat();
-  chatToast('对话已删除');
+  chatToast(draftRemoved ? '对话已删除' : '对话已删除，但草稿未能移除，请检查浏览器存储权限。', { error:!draftRemoved });
 }
 
 function removeMessage(id) {
@@ -984,18 +780,7 @@ function removeMessage(id) {
 let profileFirstTime = false;
 
 function openProfile({ firstTime = false } = {}) {
-  profileFirstTime = firstTime;
-  fillProfileForm({
-    nameEl: $('pf-name'),
-    genderEl: $('pf-gender'),
-    customEl: $('pf-custom'),
-    customWrap: $('pf-custom-wrap'),
-    profile: userProfile,
-  });
-  $('pf-error').textContent = '';
-  $('btn-pf-save').textContent = firstTime ? '开始对话' : '保存';
-  $('profile-dialog').showModal();
-  $('pf-name').focus();
+  openSettings({ tab: 'profile', firstTime });
 }
 
 function initProfileDialog() {
@@ -1003,100 +788,107 @@ function initProfileDialog() {
     genderEl: $('pf-gender'), customWrap: $('pf-custom-wrap'),
   }));
 
-  $('btn-pf-save').addEventListener('click', () => {
-    if (busy || chatBusy) return;
-    const err = profileFormError({ nameEl: $('pf-name'), genderEl: $('pf-gender'), customEl: $('pf-custom') });
-    if (err) {
-      $('pf-error').textContent = err;
-      return;
-    }
-    const raw = readProfileForm({ nameEl: $('pf-name'), genderEl: $('pf-gender'), customEl: $('pf-custom') });
-    const nextProfile = normalizeProfile(createProfile(raw));
-    if (session) {
-      const next = { ...session, profile: nextProfile };
-      if (!persistSession(next)) return;
-      session = next;
-    }
-    userProfile = nextProfile;
-    if (!saveUserProfile(userProfile)) {
-      $('pf-error').textContent = '默认档案未能保存，请检查浏览器存储空间与权限';
-      renderChat();
-      return;
-    }
-    $('profile-dialog').close();
-    renderChat();
-    if (profileFirstTime && session && !session.messages.length) {
-      chatToast(`好，从今往后她就叫你「${userProfile.name}」了`);
-    }
-  });
-
-  $('btn-profile').addEventListener('click', () => openProfile());
 }
 
 /* ================= 启动 ================= */
 
-async function bootWordblade() {
-  run = loadRun() || createRun({ tier: '基础', difficulty: DEFAULT_DIFFICULTY });
-  render();
-
-  if (run.over) {
-    commitCurrentRun();
-    render();
-    return;
-  }
-  if (!hasModel()) {
-    toast('先填写 API Key 才能开始出题');
-    openSettings();
-    return;
-  }
-  if (!run.current) await advance();
-}
-
 async function boot() {
+  for (const scene of ['day', 'night']) document.documentElement.style.setProperty(`--scene-${scene}`, `url("${localMediaUrl(SCENE_PATHS[scene])}")`);
   initSettings();
   initStats();
   initProfileDialog();
+  initSelectionSpeech();
 
   profile = normalizeModelProfile(loadProfile() || emptyProfile());
-  stats = loadStats();
   userProfile = loadUserProfile();
+  session = loadChatSession();
+  client = initClientSettings({ legacy:profile, notify:text=>chatToast(text,{error:true}), isBusy:()=>chatBusy||learning?.isBusy(),
+    beforeRestore:()=>persistDraft() && (!learning || learning.saveDraft()),
+    onModel:entry=>{if(session){const next={...session,modelId:entry.id};if(!persistSession(next)){client.syncChat(session.modelId,session.assistantConfig);return;}session=next;}profile=entry.profile;renderChat();},
+  });
+  profile = client.profile(session?.modelId);
+  if (session?.profile) userProfile = normalizeProfile(session.profile) || userProfile;
   mode = loadMode();
   faceStyle = loadFaceStyle();
+  initLayout({ select: $('set-layout'), status: $('layout-status'), notify: (text) => chatToast(text, { error: true }) });
+  responsive = initResponsiveUI({ chat: $('view-chat'), main: $('chat-main'), sidebar: $('session-side'), practice: $('chat-practice'), sideButton: $('btn-side'), practiceButton: $('btn-chat-practice'), overlay: $('chat-overlay'), composer: $('chat-input') });
+  learning = createLearningController({ host: $('view-learn'), chatHost: $('chat-practice'), getProfile: () => profile, openSettings, navigate: (value) => $(NAV_IDS[value]).click(), notify: (text) => chatToast(text, { error: true, ms: 7000 }) });
+  for (const nextMode of Object.values(MODES)) {
+    $(NAV_IDS[nextMode]).addEventListener('click', async () => {
+      if (chatBusy || learning.isBusy()) { chatToast('先等当前回复完成。'); return; }
+      if (!learning.saveDraft()) return;
+      if (!saveMode(nextMode)) { chatToast('页面偏好未能保存。', { error: true }); return; }
+      mode = nextMode;
+      applyMode();
+      if (mode === MODES.chat) {
+        if (!session) bootChat();
+        else { renderChat(); if (!tutorial?.active && !profileComplete(userProfile)) openProfile({ firstTime: true }); }
+      }
+      else learning.setPage(mode);
+    });
+  }
+  document.querySelector('.brand').addEventListener('click', (event) => { event.preventDefault(); $('nav-learn').click(); });
+  $('btn-close-settings').addEventListener('click', () => $('settings').close());
+  $('settings').addEventListener('close', () => $('btn-settings').setAttribute('aria-expanded', 'false'));
+  window.addEventListener('resize', applyMode);
 
   // 共用按钮
   $('btn-settings').addEventListener('click', openSettings);
 
-  // 拼单词模式的按钮：只在对应模式下生效
-  $('btn-submit').addEventListener('click', () => {
-    if (mode !== MODES.wordblade) return;
-    if (busy || run?.over) return;
-    if (!run.current) advance();
-    else submit();
-  });
-  $('btn-restart').addEventListener('click', () => { if (mode === MODES.wordblade) restartRun(); });
-  $('btn-undo').addEventListener('click', () => { if (mode === MODES.wordblade) { run = undoSelection(run); render(); } });
-  $('btn-clear').addEventListener('click', () => { if (mode === MODES.wordblade) { run = clearSelection(run); render(); } });
-  $('btn-dice').addEventListener('click', () => { if (mode === MODES.wordblade) onReroll(); });
-  $('btn-wildcard').addEventListener('click', () => { if (mode === MODES.wordblade) submitWildcard(); });
-
   // 对话模式的按钮
   $('btn-chat-send').addEventListener('click', sendChat);
-  $('btn-side').addEventListener('click', () => $('view-chat').classList.toggle('side-open'));
+  $('btn-chat-stop').addEventListener('click',()=>replyController?.abort());
+  $('btn-export-chat').addEventListener('click',()=>{if(session)downloadFile(`${session.title.replace(/[\\/:*?"<>|]/g,'_')}.md`,conversationMarkdown(session),'text/markdown;charset=utf-8').catch(error=>chatToast(error.message,{error:true}));});
+  $('chat-input').addEventListener('input',()=>{clearTimeout(draftTimer);$('draft-status').textContent='';draftTimer=setTimeout(persistDraft,450);});
+  $('chat-input').addEventListener('blur',persistDraft);
+  window.addEventListener('pagehide',persistDraft);
+  window.addEventListener('dreamwhale:pause',()=>{persistDraft();learning?.saveDraft();});
+  window.addEventListener('dreamwhale:back',event=>{
+    const dialogs=[...document.querySelectorAll('dialog[open]')];
+    if(dialogs.length){dialogs.at(-1).close();event.preventDefault();return;}
+    if($('view-chat').matches('.side-open,.practice-open')){responsive.closePanels();event.preventDefault();return;}
+    if(mode!==MODES.learn){$('nav-learn').click();event.preventDefault();}
+  });
+  const networkStatus=()=>{$('connection-status').textContent=navigator.onLine?'':'离线 · 本地学习仍可使用';};
+  window.addEventListener('online',networkStatus);window.addEventListener('offline',networkStatus);networkStatus();
+  restoreDraft();
   $('chat-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && client.preferences().enterSend && !window.matchMedia('(pointer: coarse)').matches) {
       e.preventDefault();
       sendChat();
     }
   });
 
   applyMode();
+  if (mode !== MODES.chat) learning.setPage(mode);
 
   if (!storageAvailable()) {
     chatToast('当前环境无法使用本地存储，请允许浏览器存储后再发送', { error: true, ms: 6000 });
   }
 
-  if (mode === MODES.wordblade) await bootWordblade();
-  else bootChat();
+  tutorial = initTutorial({
+    navigate: (page, mistakes) => {
+      if (mode !== page) {
+        mode = page; applyMode();
+        if (page === MODES.chat) bootChat(); else learning.setPage(page);
+      }
+      if (mistakes) learning.showMistakes();
+    },
+    getFaceStyle: () => faceStyle,
+    notify: (text) => chatToast(text, { error: true }),
+    canStart: () => {
+      if (chatBusy || learning.isBusy()) { chatToast('等这一轮完成，再让梦鲸带你逛逛。'); return false; }
+      if (!learning.saveDraft()) return false;
+      responsive.closePanels();
+      for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+      learning.setPage(mode === MODES.chat ? 'learn' : mode);
+      return true;
+    },
+    onClose: () => { saveMode(mode); },
+  });
+  $('btn-tutorial').addEventListener('click', () => tutorial.start({ restart: true }));
+  if (tutorial.shouldStart()) tutorial.start();
+  else if (mode === MODES.chat) bootChat();
 }
 
-boot();
+boot().catch(error=>chatToast(`启动失败：${error.message}。原有数据未清空。`,{error:true,ms:30000}));

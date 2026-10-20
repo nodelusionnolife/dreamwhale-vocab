@@ -153,16 +153,16 @@ test('syntax errors leave the previous single-file artifact intact', (t) => {
   assert.equal(fs.readFileSync(path.join(directory, 'out.html'), 'utf8'), 'previous valid artifact');
 });
 
-test('current application builds from source with its local assets and lazy wordbank', (t) => {
+test('current application builds from source with its local assets and learning engine', (t) => {
   const output = path.join(temporaryDirectory(t), 'app.html');
   const html = build(ROOT, output);
   const script = scriptFrom(html);
   assert.doesNotThrow(() => new Script(script));
   assert.equal((html.match(/<script/gi) || []).length, 1);
-  assert.ok(script.includes('__def("src/engine/wordbank.js"'));
+  assert.ok(script.includes('__def("src/engine/learning.js"'));
   const paths = [...new Set(ASSET_MANIFEST.assets.flatMap((asset) => [asset.source, ...(asset.altSources || [])])
     .filter((source) => source?.type === 'local').map((source) => source.path))];
-  assert.equal(paths.length, 29);
+  assert.equal(paths.length, 36);
   for (const assetPath of paths) assert.ok(script.includes(`"${assetPath}":"data:image/webp;base64,`), assetPath);
   assert.equal((script.match(/data:image\//g) || []).length, paths.length);
   assert.ok(!/img\.remit\.ee|picui\.ogmua\.cn|assets\/bg\/chat-room\.jpg/.test(script));

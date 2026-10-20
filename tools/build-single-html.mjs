@@ -7,7 +7,7 @@
 // 做四件事：
 //   1. 从 src/main.js 出发 DFS 收集模块（顺带检出循环依赖，有环就报错退出）
 //   2. 每个模块包进 __def(id, factory)，静态 import 变成 __req(id) 解构
-//   3. 动态 import('./engine/wordbank.js') 变成 Promise.resolve().then(() => __req(...))
+//   3. 动态 import('./module.js') 变成 Promise.resolve().then(() => __req(...))
 //   4. 把结果内联进 index.html，替换掉 <script type="module" src> 那一行
 //
 // 只打包 main.js 能走到的模块，所以 tests/ 和 tools/ 天然进不来。
@@ -214,7 +214,6 @@ function walk(id) {
   const mod = transformModule(id);
   modules.set(id, mod);
   // 动态导入进包但不算静态依赖：单文件里没有「按需再下一次请求」这回事，
-  // 少打包它就只会在切到拼单词模式时炸「模块未打包」。
   const allDeps = [...mod.deps.map((d) => d.spec), ...dynamicImportSpecs(mod.body, id)];
   for (const spec of allDeps) {
     const depId = toId(path.dirname(id), spec);

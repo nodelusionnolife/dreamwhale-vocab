@@ -14,7 +14,7 @@ export function snapshotInjection(message) {
 }
 
 function userText(text) {
-  return String(text ?? '').replace(/<(?=\/?(?:Question|AnswerKey|TurnSummary|QuestionContext|UserProfile)\b)/gi, '&lt;');
+  return String(text ?? '').replace(/<(?=\/?(?:Question|AnswerKey|TeachingReference|TurnSummary|QuestionContext|UserProfile)\b)/gi, '&lt;');
 }
 
 function questionReference(context) {
@@ -29,7 +29,7 @@ function questionReference(context) {
 
 export function serializeMessage(message, { questionContext = null } = {}) {
   if (message.role === 'assistant') {
-    const body = message.compacted ? '' : stripTurnSummary(message.text).replace(/<AnswerKey>[\s\S]*?<\/AnswerKey>/gi, '').trim();
+    const body = message.compacted ? '' : stripTurnSummary(message.text).replace(/<(AnswerKey|TeachingReference)>[\s\S]*?<\/\1>/gi, '').trim();
     return { role: 'assistant', content: `${body}${summarySuffix(message)}`.trimStart() };
   }
   if (message.compacted) {

@@ -1,21 +1,29 @@
 import { appendMessage, assistantReplyCount, deriveTitle, markQuestionUsed, renameSession } from '../engine/chat.js';
-import { applyRestState, drawQuestion, planInjection } from '../engine/questions.js';
+import { applyRestState, drawQuestion, planInjection, restState } from '../engine/questions.js';
 import { compileChatRequest } from '../engine/prompt.js';
 import { RetryableError } from '../engine/judge.js';
 import { callText } from '../gateway/model.js';
 import { describeRequest, recordRequest } from './request-record.js';
+import { createQuestionInstance } from '../engine/learning.js';
+import { composeOutgoing } from '../engine/questions.js';
 
-export function prepareUserTurn(session, text, { chooseQuestion = drawQuestion } = {}) {
+export function prepareUserTurn(session, text, { chooseQuestion = drawQuestion, canAsk = true } = {}) {
   if (session.messages.at(-1)?.role === 'user') {
     throw new RetryableError('上一条消息还没有回复，请重新生成或删除后再发送', { kind: 'pending-reply' });
   }
   const value = String(text ?? '').trim();
   if (!value) throw new RetryableError('先说点什么吧', { kind: 'empty-input' });
-  const plan = planInjection({ assistantReplyCount: assistantReplyCount(session), everyN: session.everyN, session });
-  const question = plan.inject ? chooseQuestion({ session, difficulty: session.difficulty }) : null;
+  let plan = planInjection({ assistantReplyCount: assistantReplyCount(session), everyN: session.everyN, session });
+  if (plan.inject && !canAsk) plan = { ...plan, inject: false, next: restState(session) };
+  const question = plan.inject && canAsk ? chooseQuestion({ session, difficulty: session.difficulty }) : null;
+  const instance = question ? createQuestionInstance(question) : null;
   let next = appendMessage(applyRestState(session, plan.next), { role: 'user', text: value, questionId: question?.id });
+  if (instance) {
+    const last = next.messages.at(-1);
+    next = { ...next, messages: [...next.messages.slice(0, -1), { ...last, questionInstance: instance, promptInjection: composeOutgoing({ userText: '', question: instance.question }) }] };
+  }
   if (question) next = markQuestionUsed(next, question.id);
-  return renameSession(next, deriveTitle(next));
+  return session.titleManual ? next : renameSession(next, deriveTitle(next));
 }
 
 export function replyAppliesTo(current, snapshot) {
@@ -24,7 +32,7 @@ export function replyAppliesTo(current, snapshot) {
     && current?.messages?.at(-1)?.role === 'user';
 }
 
-export async function generateChatTurn(snapshot, system, profile, { request = callText, signal } = {}) {
+export async function generateChatTurn(snapshot, system, profile, { request = callText, signal, onDelta } = {}) {
   const compiled = compileChatRequest(snapshot, system);
   const requestInfo = describeRequest(compiled, profile, snapshot.lastRequest);
   const started = Date.now();
@@ -32,6 +40,7 @@ export async function generateChatTurn(snapshot, system, profile, { request = ca
     const result = await request({ ...profile, maxOutputTokens: compiled.maxOutputTokens }, {
       messages: compiled.messages,
       signal,
+      onDelta,
       requestContext: { sessionId: snapshot.id, promptVersion: compiled.promptVersion },
     });
     let next = recordRequest(compiled.session || snapshot, {

@@ -1,0 +1,53 @@
+[
+  {
+    "id": "cg-day-library",
+    "transparent": false,
+    "prompt": "Use case: stylized-concept. Asset type: wide background CG for an existing Chinese English-vocabulary study app named Dreamwhale, used as a shallow panoramic hero and soft page background. Create a beautiful hand-painted anime environment, no people: a peaceful coastal reading room in soft morning light, ivory walls, arched window framing a pale turquoise sea and distant white sails, a small walnut desk with an open blank book, a few stacked books, a lavender curtain drifting gently, one tiny ceramic whale and a cup of tea. Wide landscape 16:9 composition, focal vignette on the RIGHT third; LEFT half is quiet pale ivory sunlit wall and soft window light for dark UI text. Refined watercolor-gouache anime background, soft lavender, warm cream, dusty blue, indigo accents, subtle grain, detailed but calm. No lettering, words, logos, UI, borders or watermark. Keep all scenic elements inside the composition, no text or characters.",
+    "tool": "image_gen (built-in)",
+    "file": "assets/scenes/cg-day-library.webp"
+  },
+  {
+    "id": "cg-night-room",
+    "transparent": false,
+    "prompt": "Use case: stylized-concept. Asset type: wide background CG for the chat area of a vocabulary-learning app, companion to a lavender-and-ivory coastal study room. Create a hand-painted anime coastal reading room at night, no people. Through a large arched window on the RIGHT are a calm indigo ocean, small moon, sparse stars, and distant warm harbor lights. Lower-right desk has a closed book and a warm amber reading lamp, subtle lavender curtains, small ceramic whale. LEFT two thirds mostly quiet deep desaturated blue wall and soft shadow, suitable behind translucent chat bubbles. Wide landscape 16:9. Refined watercolor and gouache anime environment, elegant soft edges, gentle moonlight, blue-lavender shadows and restrained amber highlights. Atmospheric yet uncluttered, medium-low contrast in left area. No text, lettering, logos, UI, watermark, or people.",
+    "tool": "image_gen (built-in)",
+    "file": "assets/scenes/cg-night-room.webp"
+  },
+  {
+    "id": "anchor-library",
+    "transparent": true,
+    "prompt": "Use case: stylized-concept. Asset type: one transparent decorative anchor illustration for the vocabulary-library navigation tile of Dreamwhale, a calm anime study app. Centered single compact vignette: two small ivory books with lavender covers, one open book with blank pages, a miniature friendly blue ceramic whale resting atop them, a ribbon bookmark curling gently. Hand-painted watercolor-gouache anime prop art, delicate indigo linework, warm ivory and muted periwinkle with one brass accent. Clear readable silhouette at 80px, beautiful crafted detail at full size, generous transparent padding, subtle soft contact shadow only. Truly transparent background; no colored square, no scene, no text or letters, no logo or watermark. Not an interface mockup.",
+    "tool": "image_gen (built-in)",
+    "file": "assets/scenes/anchor-library.webp"
+  },
+  {
+    "id": "anchor-practice",
+    "transparent": true,
+    "prompt": "Use case: stylized-concept. Asset type: one transparent decorative anchor illustration for a vocabulary practice navigation tile, matching soft anime coastal study stationery. Centered single compact vignette: a delicate brass compass with a lavender star-shaped needle, two small blue and cream flashcards with only simple geometric symbols (no text), and an indigo pencil. Hand-painted watercolor-gouache anime prop art, delicate indigo outlines, ivory, dusty blue, muted lavender, small warm gold details. Distinct clear silhouette readable at 80px; generous transparent padding; subtle contact shadow only. Truly transparent background, no colored square or scene. No words, letters, numerals, logo, watermark or UI.",
+    "tool": "image_gen (built-in)",
+    "file": "assets/scenes/anchor-practice.webp"
+  },
+  {
+    "id": "anchor-mistakes",
+    "transparent": true,
+    "prompt": "Use case: stylized-concept. Asset type: one transparent decorative anchor illustration for an automatically organized mistake notebook in a friendly vocabulary app. Centered compact vignette: a small open lavender notebook with blank cream pages, a soft blue whale-shaped bookmark peeking from the top, a tiny golden four-point star and a neatly repaired corner held by lavender tape. Warm reassuring mood, not a punishment symbol. Hand-painted watercolor-gouache anime prop art with delicate indigo outlines, ivory, periwinkle, muted blue and small gold accents; clear silhouette readable at 80px and gentle detail at full size. Generous transparent padding and subtle contact shadow only. Truly transparent background; no colored square, no text, letters, UI, logo or watermark.",
+    "tool": "image_gen (built-in)",
+    "file": "assets/scenes/anchor-mistakes.webp"
+  },
+  {
+    "id": "cg-dawn-room",
+    "transparent": false,
+    "prompt": "Edit this existing Dreamwhale coastal reading-room CG into an EARLY MORNING variation. Preserve the exact room architecture, arched window on the right, walnut desk, open blank book, stacked books, ceramic blue whale, tea, lavender curtain, no people. Cool pale blue and lilac dawn light with a soft peach sunrise low over a misty turquoise sea; delicate first rays, faint morning haze, peaceful and fresh. Keep the left half a quiet pale ivory wall, low detail for dark UI text. Match the hand-painted anime watercolor/gouache art style and landscape composition of the reference, 16:9. Do not add words, text, UI, logos, watermark or human characters. This is one continuous finished background CG, not a contact sheet.",
+    "tool": "image_gen (built-in)",
+    "reference": "assets/scenes/originals/cg-day-library.png",
+    "file": "assets/scenes/cg-dawn-room.webp"
+  },
+  {
+    "id": "cg-dusk-room",
+    "transparent": false,
+    "prompt": "Edit this existing Dreamwhale coastal reading-room CG into a GOLDEN DUSK variation. Preserve the exact room architecture, arched window on the right, walnut desk, open blank book, stacked books, ceramic blue whale, tea, lavender curtain, no people. Warm apricot and rose sunset over the sea, gentle amber rays crossing the desk, lavender shadows and dusty mauve clouds, calm cozy late-afternoon atmosphere. Left half remains a quiet light warm ivory wall for dark UI text, no busy details. Match the reference hand-painted anime watercolor/gouache style, wide 16:9 composition and object placement. No lettering, words, UI, logos, watermark, or people. One continuous finished background CG, not a contact sheet.",
+    "tool": "image_gen (built-in)",
+    "reference": "assets/scenes/originals/cg-day-library.png",
+    "file": "assets/scenes/cg-dusk-room.webp"
+  }
+]

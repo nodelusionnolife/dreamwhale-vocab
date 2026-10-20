@@ -1,0 +1,7 @@
+{
+  "appId": "com.dreamwhale.vocab",
+  "appName": "梦鲸词汇",
+  "webDir": "app-dist",
+  "android": { "allowMixedContent": false, "captureInput": true, "minWebViewVersion": 111 },
+  "server": { "androidScheme": "https", "errorPath": "native-error.html" }
+}

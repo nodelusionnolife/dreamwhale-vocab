@@ -4,6 +4,8 @@ import { renderThread, renderAppearancePreview } from '../src/ui/chat.js';
 import { resolveFace, lastFace } from '../src/engine/emotions.js';
 import { ASSET_MANIFEST } from '../src/content/assets.js';
 import { CHARACTER_AVATAR_PATH } from '../src/content/emotions.js';
+import { saveVoiceService } from '../src/storage/voice-service.js';
+import { stopSpeech } from '../src/platform/runtime.js';
 
 class Node {
   constructor(tag) {
@@ -54,7 +56,10 @@ class Node {
     node.parentNode = parent;
   }
   addEventListener(type, handler) { (this.events[type] ||= []).push(handler); }
-  dispatch(type) { for (const handler of this.events[type] || []) handler({ stopPropagation() {} }); }
+  setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
+  getAttribute(name) { return this.attributes?.[name] ?? null; }
+  append(...nodes) { for (const node of nodes) this.appendChild(node); }
+  dispatch(type) { return Promise.all((this.events[type] || []).map(handler => handler({ stopPropagation() {} }))); }
 }
 
 const previousDocument = globalThis.document;
@@ -75,6 +80,32 @@ function findAll(node, predicate) {
 const byClass = (node, cls) => findAll(node, (item) => item.className.split(' ').includes(cls));
 const session = (messages, options = {}) => ({ id: 'session-one', messages, ...options });
 
+test('chat paragraph and whole-message buttons use cloud while embedded exercise buttons stay on system speech', async () => {
+  const previousStorage = globalThis.localStorage, previousAudio = globalThis.Audio;
+  const values = new Map(), spoken = [], requests = [];
+  globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  globalThis.document.getElementById = () => null;
+  saveVoiceService({ provider: 'minimax', fallback: false, profiles: { minimax: { apiKey: 'mock-key' } } });
+  globalThis.Audio = class { play() { queueMicrotask(() => this.onended?.()); return Promise.resolve(); } pause() {} removeAttribute() {} };
+  globalThis.__dreamwhaleNative = {
+    stopSpeech() {}, prepareSpeech: async () => ({ id: 'system', lang: 'en-US', local: true }), speak: async text => spoken.push(text),
+    fetch: async (_url, options) => { requests.push(JSON.parse(options.body)); return new Response(JSON.stringify({ data: { audio: '494433' } })); },
+  };
+  try {
+    const hostEl = new Node('div');
+    renderThread({ hostEl, session: session([{ id: 'a', role: 'assistant', text: 'Let us talk.\n\n<Question>Read this word.</Question><AnswerKey>hidden secret</AnswerKey>' }]), onMessageAction() {} });
+    await byClass(byClass(hostEl, 'para')[0], 'speech-button')[0].dispatch('click');
+    assert.equal(requests.length, 1); assert.equal(requests[0].text, 'Let us talk.'); assert.equal(spoken.length, 0);
+    await byClass(byClass(hostEl, 'qcard')[0], 'speech-button')[0].dispatch('click');
+    assert.equal(requests.length, 1); assert.deepEqual(spoken, ['Read this word.']);
+    await byClass(byClass(hostEl, 'message-actions')[0], 'speech-button')[0].dispatch('click');
+    assert.equal(requests.length, 2); assert.equal(requests[1].text, 'Let us talk.');
+  } finally {
+    stopSpeech(); delete globalThis.__dreamwhaleNative; delete globalThis.document.getElementById;
+    globalThis.localStorage = previousStorage; globalThis.Audio = previousAudio;
+  }
+});
+
 test('摘要内容在正文、题卡、旁白及表情解析前移除', () => {
   const hostEl = new Node('div');
   const texts = [];
@@ -87,7 +118,7 @@ test('摘要内容在正文、题卡、旁白及表情解析前移除', () => {
     faceFor: (text) => { texts.push(text); return null; },
   });
   assert.deepEqual(texts, ['“你好。”']);
-  assert.equal(hostEl.textContent, '梦鲸“你好。”');
+  assert.equal(hostEl.textContent, '梦鲸“你好。”▶ 朗读段落');
   assert.equal(byClass(hostEl, 'qcard').length, 0);
   assert.equal(byClass(hostEl, 'seg-env').length, 0);
   assert.equal(byClass(hostEl, 'msg-summary').length, 0);
@@ -101,7 +132,7 @@ test('未闭合的摘要尾部不进入气泡或表情解析', () => {
     faceFor: (text) => { texts.push(text); return null; },
   });
   assert.deepEqual(texts, ['你好']);
-  assert.equal(hostEl.textContent, '梦鲸你好');
+  assert.equal(hostEl.textContent, '梦鲸你好▶ 朗读段落');
 });
 
 test('调试小总结作为纯文本显示，不解析标记或HTML', () => {
@@ -120,7 +151,7 @@ test('缺少有效摘要只在调试模式给提示，不编造摘要', () => {
   const hostEl = new Node('div');
   const current = session([{ role: 'assistant', text: '正文', summary: null, summaryStatus: 'invalid' }]);
   renderThread({ hostEl, session: current });
-  assert.equal(hostEl.textContent, '梦鲸正文');
+  assert.equal(hostEl.textContent, '梦鲸正文▶ 朗读段落');
   renderThread({ hostEl, session: current, debugSummaries: true });
   assert.match(hostEl.textContent, /本轮未生成有效小总结，正文暂不能裁剪/);
 });

@@ -1,13 +1,36 @@
 {
   "name": "dreamwhale-vocab",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
-  "description": "梦鲸词汇 · 梦鲸英语对话副本。零依赖纯静态站点。",
+  "description": "梦鲸词汇 · 离线练习、间隔复习与角色聊天。",
   "scripts": {
     "test": "node tests/run.mjs && node --test tests/*.test.mjs",
     "serve": "node serve.mjs",
     "build:single": "node tools/build-single-html.mjs",
-    "build:words": "node tools/build-cet4.mjs"
+    "build:words": "node tools/build-cet4.mjs",
+    "build:app": "vite build",
+    "dev:app": "vite --host 127.0.0.1 --port 5174",
+    "android:sync": "npm run build:app && cap sync android",
+    "android:build": "node tools/native-build.mjs android",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "node tools/native-build.mjs desktop",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-clipboard-manager": "2.5.0",
+    "@tauri-apps/plugin-dialog": "2.8.3",
+    "@tauri-apps/plugin-fs": "2.7.1",
+    "@tauri-apps/plugin-http": "2.8.3"
+  },
+  "overrides": { "xcode": { "uuid": "11.1.1" } },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "@tauri-apps/cli": "2.12.3",
+    "vite": "8.3.4"
   }
 }

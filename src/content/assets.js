@@ -1,4 +1,5 @@
 import { emotionsWithArt, faceUrlFor, FACE_STYLES, DEFAULT_FACE_STYLE, CHARACTER_AVATAR_PATH } from './emotions.js';
+import { SCENE_ASSETS } from './scenes.js';
 
 export const ASSET_KINDS = ['bg', 'sprite', 'sticker'];
 export const PRELOAD_POLICIES = ['eager', 'lazy', 'on-demand'];
@@ -70,6 +71,7 @@ export const ASSET_MANIFEST = {
   workId: 'dreamwhale-vocab',
   assets: [
     ...buildFaceAssets(),
+    ...SCENE_ASSETS,
     {
       id: CHARACTER_AVATAR_ID,
       kind: 'sticker',

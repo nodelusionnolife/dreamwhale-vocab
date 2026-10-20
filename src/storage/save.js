@@ -1,15 +1,8 @@
-// 存档与设置。这是唯一允许触碰 localStorage 的模块。
-// 平台适配留在这里：iNeed 类托管环境的沙箱无同源，localStorage 可能被垫片顶替，
-// 垫片有约 1MB 配额，所以存档必须保持紧凑。
-
-import { toSaveable, fromSaveable } from '../engine/state.js';
-import { emptyStats, normalizeStats } from '../engine/stats.js';
+import { appStorage } from '../platform/runtime.js';
 import { fromSaveable as chatFromSaveable, normalizeProfile } from '../engine/chat.js';
 import { FACE_HOSTS, DEFAULT_FACE_HOST, FACE_STYLES, DEFAULT_FACE_STYLE } from '../content/emotions.js';
 
-const RUN_KEY = 'word-blade:run';
 const PROFILE_KEY = 'word-blade:profile';       // 模型端点与 Key
-const STATS_KEY = 'word-blade:stats';
 const USER_KEY = 'word-blade:user-profile';     // user 档案：称呼与性别
 const CHAT_KEY = 'word-blade:chat-session';     // 对话模式的会话
 const MODE_KEY = 'word-blade:mode';             // 玩法模式
@@ -18,7 +11,7 @@ const FACE_STYLE_KEY = 'word-blade:face-style';
 
 function store() {
   try {
-    return globalThis.localStorage || null;
+    return appStorage() || null;
   } catch {
     return null; // 无同源沙箱下访问会抛错
   }
@@ -34,37 +27,6 @@ export function storageAvailable() {
   } catch {
     return false;
   }
-}
-
-export function loadRun() {
-  const s = store();
-  if (!s) return null;
-  try {
-    const raw = s.getItem(RUN_KEY);
-    if (!raw) return null;
-    return fromSaveable(JSON.parse(raw));
-  } catch {
-    return null;
-  }
-}
-
-export function saveRun(run) {
-  const s = store();
-  if (!s || !run) return false;
-  try {
-    s.setItem(RUN_KEY, JSON.stringify(toSaveable(run)));
-    return true;
-  } catch {
-    return false; // 配额超限或沙箱拒绝，交给上层提示
-  }
-}
-
-export function clearRun() {
-  const s = store();
-  if (!s) return;
-  try {
-    s.removeItem(RUN_KEY);
-  } catch { /* ignore */ }
 }
 
 export function loadProfile() {
@@ -89,52 +51,17 @@ export function saveProfile(profile) {
   }
 }
 
-/** 导出存档时默认不含 API Key（见总设计案的安全约定）。 */
-export function exportRun(run) {
-  return JSON.stringify({ kind: 'word-blade-save', ...toSaveable(run) }, null, 2);
-}
-
-export function loadStats() {
-  const s = store();
-  if (!s) return emptyStats();
-  try {
-    const raw = s.getItem(STATS_KEY);
-    return raw ? normalizeStats(JSON.parse(raw)) : emptyStats();
-  } catch {
-    return emptyStats();
-  }
-}
-
-export function saveStats(stats) {
-  const s = store();
-  if (!s) return false;
-  try {
-    s.setItem(STATS_KEY, JSON.stringify(stats));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function clearStats() {
-  const s = store();
-  if (!s) return;
-  try {
-    s.removeItem(STATS_KEY);
-  } catch { /* ignore */ }
-}
-
 /* ---------------- 玩法模式 ---------------- */
 
-export const MODES = { chat: 'chat', wordblade: 'wordblade' };
-export const DEFAULT_MODE = MODES.chat; // 对话模式为默认项
+export const MODES = { learn: 'learn', library: 'library', practice: 'practice', chat: 'chat' };
+export const DEFAULT_MODE = MODES.learn;
 
 export function loadMode() {
   const s = store();
   if (!s) return DEFAULT_MODE;
   try {
     const v = s.getItem(MODE_KEY);
-    return v === MODES.wordblade ? MODES.wordblade : DEFAULT_MODE;
+    return Object.values(MODES).includes(v) ? v : DEFAULT_MODE;
   } catch {
     return DEFAULT_MODE;
   }
@@ -144,7 +71,7 @@ export function saveMode(mode) {
   const s = store();
   if (!s) return false;
   try {
-    s.setItem(MODE_KEY, mode === MODES.wordblade ? MODES.wordblade : MODES.chat);
+    s.setItem(MODE_KEY, Object.values(MODES).includes(mode) ? mode : DEFAULT_MODE);
     return true;
   } catch {
     return false;
@@ -246,6 +173,10 @@ function summarize(session) {
     title: session.title,
     updatedAt: session.updatedAt,
     messageCount: session.messages?.length || 0,
+    pinned: session.pinned === true,
+    archived: session.archived === true,
+    deletedAt: session.deletedAt || null,
+    branchOf: session.branchOf || null,
   };
 }
 
@@ -477,6 +408,49 @@ export function setCurrentSession(id) {
     s.setItem(CHAT_INDEX_KEY, JSON.stringify(index));
     return true;
   } catch { return false; }
+}
+
+export function importChatSessions(sessions, extraWrites = []) {
+  const s = store();
+  if (!s) throw new Error('浏览器存储不可用。');
+  loadSessionList();
+  const indexRaw = s.getItem(CHAT_INDEX_KEY);
+  const index = parseIndex(indexRaw);
+  if (indexRaw && !index) throw new Error('现有会话索引无法读取，未导入。');
+  const staged = [];
+  const written = [];
+  try {
+    const existing = new Set((index?.sessions || []).map(item => item.id));
+    const summaries = [];
+    for (const session of sessions) {
+      if (existing.has(session.id)) throw new Error('导入会话编号冲突。');
+      existing.add(session.id);
+      const token = `t_${Date.now().toString(36)}_${globalThis.crypto.randomUUID()}`;
+      const refs = [];
+      for (const message of session.messages) {
+        const ref = `${message.id}:${token}`;
+        const key = CHAT_MSG_PREFIX + ref;
+        s.setItem(key, JSON.stringify(message)); staged.push(key); refs.push(ref);
+      }
+      const storageKey = `${session.id}:${token}`;
+      const key = CHAT_SESS_PREFIX + storageKey;
+      s.setItem(key, JSON.stringify({ ...metaOf(session), messageIds: refs })); staged.push(key);
+      summaries.push({ ...summarize(session), storageKey });
+    }
+    if (s.getItem(CHAT_INDEX_KEY) !== indexRaw || extraWrites.some(w => s.getItem(w.key) !== w.expected)) throw new Error('另一页面更新了数据，请重新导入。');
+    for (const w of extraWrites) { s.setItem(w.key, w.value); written.push(w); }
+    if (s.getItem(CHAT_INDEX_KEY) !== indexRaw) throw new Error('另一页面更新了会话，请重新导入。');
+    s.setItem(CHAT_INDEX_KEY, JSON.stringify({ version: CHAT_STORE_VERSION, revision: (index?.revision || 0) + 1, currentId: index?.currentId || summaries[0]?.id || null, sessions: [...(index?.sessions || []), ...summaries] }));
+    return summaries.length;
+  } catch (error) {
+    let rollbackFailed = false;
+    for (const w of written.reverse()) {
+      try { if (s.getItem(w.key) === w.value) { if (w.expected === null) s.removeItem(w.key); else s.setItem(w.key, w.expected); } else rollbackFailed = true; } catch { rollbackFailed = true; }
+    }
+    cleanUnreferenced(s, staged);
+    if (rollbackFailed) throw new Error('导入失败，部分设置未能恢复。请保留备份，刷新后核对学习记录。');
+    throw error;
+  }
 }
 
 export function deleteChatSession(id) {

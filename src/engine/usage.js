@@ -35,15 +35,20 @@ export function normalizeUsageShape(usage) {
   };
 }
 
-export function normalizeUsage(raw) {
+export function normalizeUsage(raw, format = 'chat') {
   if (!raw || typeof raw !== 'object') return null;
+  let prompt = firstCount(raw.prompt_tokens, raw.input_tokens, raw.promptTokenCount, raw.prompt_eval_count);
+  let completion = firstCount(raw.completion_tokens, raw.output_tokens, raw.candidatesTokenCount, raw.eval_count);
+  if (format === 'anthropic' && prompt !== null) prompt += (tokenCount(raw.cache_read_input_tokens) || 0) + (tokenCount(raw.cache_creation_input_tokens) || 0);
+  if (format === 'gemini' && completion !== null) completion += tokenCount(raw.thoughtsTokenCount) || 0;
   return normalizeUsageShape({
-    prompt: firstCount(raw.prompt_tokens, raw.prompt_eval_count),
-    completion: firstCount(raw.completion_tokens, raw.eval_count),
-    total: raw.total_tokens,
+    prompt, completion,
+    total: firstCount(raw.total_tokens, raw.totalTokenCount),
     cached: firstCount(
       raw.prompt_cache_hit_tokens,
       raw.prompt_tokens_details?.cached_tokens,
+      raw.input_tokens_details?.cached_tokens,
+      raw.cachedContentTokenCount,
       raw.cache_read_input_tokens,
       raw.cached_tokens,
     ),

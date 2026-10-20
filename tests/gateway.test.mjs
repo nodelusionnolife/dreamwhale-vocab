@@ -174,7 +174,7 @@ test('cache ratio only uses valid reported cached and prompt counts', () => {
 
 test('legacy profiles retain credentials and infer only exact provider origins', () => {
   const old = { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'private', usePrefill: false };
-  assert.deepEqual(normalizeModelProfile(old), { ...old, provider: 'openai', cacheMode: 'auto' });
+  assert.deepEqual(normalizeModelProfile(old), { ...old, provider: 'openai', cacheMode: 'auto', apiFormat: 'chat', authMode: 'auto', sendTemperature: true, streamUsage: true, jsonMode: 'auto', tokenField: 'max_tokens' });
   assert.equal(normalizeModelProfile({ ...old, endpoint: 'https://api.openai.com.evil.example/v1' }).provider, 'custom');
   assert.equal(normalizeModelProfile({ ...old, provider: 'custom' }).provider, 'custom');
   assert.equal(normalizeModelProfile({ ...old, cacheMode: 'off' }).cacheMode, 'standard');

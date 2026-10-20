@@ -7,6 +7,8 @@ import { renderWindow } from '../engine/limits.js';
 import { stripFaceTags } from '../engine/emotions.js';
 import { stripStickerTags } from '../engine/assets.js';
 import { stripTurnSummary } from '../engine/summary.js';
+import { filterSessions } from '../engine/client.js';
+import { appendSpeech, speechButton } from './speech.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -45,6 +47,7 @@ function renderParagraphs(host, text) {
   for (const part of parts) {
     const p = el('p', 'para');
     p.appendChild(renderSegments(part));
+    appendSpeech(p, p.textContent, '朗读段落', { full: true, scope: 'chat' });
     if (p.textContent.trim()) host.appendChild(p);
   }
 }
@@ -55,7 +58,7 @@ function renderQuestionCard(questionText) {
   card.appendChild(el('div', 'qcard-label', '题目'));
   const body = el('div', 'qcard-body');
   for (const line of String(questionText).split('\n')) {
-    if (line.trim()) body.appendChild(el('div', 'qcard-line', line));
+    if (line.trim()) { const row = el('div', 'qcard-line', line); appendSpeech(row, line, '朗读英文'); body.appendChild(row); }
   }
   card.appendChild(body);
   return card;
@@ -111,7 +114,7 @@ export function renderAppearancePreview({ hostEl, face, avatarSrc }) {
 function renderAssistant(host, rawText) {
   // 先摘掉「给系统看的」标签，它们不该出现在气泡文字里
   const text = stripFaceTags(stripStickerTags(stripTurnSummary(rawText)))
-    .replace(/<AnswerKey>[\s\S]*?<\/AnswerKey>/g, '');
+    .replace(/<(AnswerKey|TeachingReference)>[\s\S]*?<\/\1>/gi, '');
   const re = /<Question>([\s\S]*?)<\/Question>/g;
   let last = 0;
   let m;
@@ -192,6 +195,7 @@ function messageDeleteControl(id, onDelete) {
 export function renderThread({
   hostEl, session, busy, showThinking = true, onRegenerate = null, onDeleteMessage = null,
   faceFor = null, avatarSrc = '', debugSummaries = false,
+  onMessageAction = null,
 }) {
   const atBottom = hostEl.scrollHeight - hostEl.scrollTop - hostEl.clientHeight < 80;
   let view = threadViews.get(hostEl);
@@ -243,6 +247,14 @@ export function renderThread({
     }
     if (usage && renderUsage(wrap, usage)) sawUsage = true;
     if (onDeleteMessage) wrap.appendChild(messageDeleteControl(msg.id, onDeleteMessage));
+    if (onMessageAction) {
+      const actions = el('div','message-actions');
+      for (const [action,label] of [['copy','复制'], ...(msg.compacted ? [] : msg.role === 'user' ? [['edit','编辑并分支']] : [['regenerate','重新生成分支']])]) {
+        const button=el('button','ghost',label);button.disabled=busy;button.addEventListener('click',()=>onMessageAction(action,msg.id));actions.append(button);
+      }
+      if (!msg.compacted) actions.append(speechButton(msg.text, '朗读整条', '朗读整条消息', { full: true, scope: 'chat' }));
+      wrap.append(actions);
+    }
 
     target.appendChild(wrap);
   };
@@ -322,30 +334,44 @@ function timeAgo(ts) {
  * 渲染左侧会话列表。
  * 删除采用就地二次确认：点 × 变成「确认删除 / 取消」，避免误删整段对话。
  */
-export function renderSessionList({ hostEl, sessions = [], currentId = null, onSelect, onNew, onDelete }) {
+const listViews = new WeakMap();
+export function renderSessionList({ hostEl, sessions = [], currentId = null, onSelect, onNew, onDelete, onAction, searchText, busy = false }) {
   hostEl.replaceChildren();
-
+  const state=listViews.get(hostEl)||{query:'',filter:'active'};listViews.set(hostEl,state);
   const head = el('div', 'side-head');
   head.appendChild(el('span', 'side-title', '对话'));
   const add = el('button', 'side-new', '＋ 新建');
   add.addEventListener('click', () => onNew && onNew());
+  add.disabled=busy;
   head.appendChild(add);
   hostEl.appendChild(head);
 
-  if (!sessions.length) {
-    hostEl.appendChild(el('div', 'side-empty', '还没有对话'));
-    return;
-  }
-
-  for (const s of sessions) {
+  const search=el('input','session-search');search.type='search';search.placeholder='搜索标题与消息';search.setAttribute('aria-label','搜索对话');search.value=state.query;
+  const filters=el('select','session-filter');filters.setAttribute('aria-label','对话分类');
+  for(const [value,label] of [['active','最近对话'],['archived','已归档'],['all','全部对话'],['trash','回收站']]){const o=el('option',null,label);o.value=value;filters.append(o);}filters.value=state.filter;
+  const results=el('div','session-results');hostEl.append(search,filters,results);
+  let searchTimer;
+  search.addEventListener('input',()=>{state.query=search.value;clearTimeout(searchTimer);searchTimer=setTimeout(draw,160);});
+  filters.addEventListener('change',()=>{state.filter=filters.value;draw();});
+  function draw(){
+  results.replaceChildren();
+  const enriched=state.query.trim()&&searchText?sessions.map(s=>({...s,searchText:searchText(s.id)})):sessions;
+  const visible=filterSessions(enriched,state);
+  if(!visible.length){results.append(el('div','side-empty',state.query?'没有找到相符的对话':'这里还没有对话'));return;}
+  for (const s of visible) {
     const item = el('div', `side-item${s.id === currentId ? ' active' : ''}`);
 
     const main = el('button', 'side-main');
-    main.appendChild(el('div', 'side-item-title', s.title || '未命名'));
+    main.appendChild(el('div', 'side-item-title', `${s.pinned?'置顶 · ':''}${s.title || '未命名'}`));
     main.appendChild(el('div', 'side-item-meta', `${s.messageCount || 0} 条 · ${timeAgo(s.updatedAt)}`));
     main.addEventListener('click', () => onSelect && onSelect(s.id));
+    main.disabled=busy||Boolean(s.deletedAt);
     item.appendChild(main);
-
+    if(onAction){
+      const menu=el('details','session-menu');menu.append(el('summary',null,'更多'));
+      const choices=s.deletedAt?[['restore','恢复'],['purge','永久删除']]:[['rename','重命名'],['pin',s.pinned?'取消置顶':'置顶'],['archive',s.archived?'移回最近':'归档'],['trash','移入回收站']];
+      for(const [action,label] of choices){const b=el('button','ghost',label);b.disabled=busy;b.addEventListener('click',()=>onAction(action,s.id));menu.append(b);}item.append(menu);
+    } else {
     const del = el('button', 'side-del', '×');
     del.title = '删除这个对话';
     del.addEventListener('click', (ev) => {
@@ -367,9 +393,21 @@ export function renderSessionList({ hostEl, sessions = [], currentId = null, onS
       del.replaceWith(confirm);
     });
     item.appendChild(del);
-
-    hostEl.appendChild(item);
+    }
+    results.appendChild(item);
   }
+  }
+  draw();
+}
+
+export function updateStreaming(host, text) {
+  const body=host.querySelector('.thinking .msg-body');
+  if(!body)return;
+  const atBottom=host.scrollHeight-host.scrollTop-host.clientHeight<100;
+  body.classList.remove('thinking-dot');body.replaceChildren();
+  const safe=text.replace(/<(TurnSummary|AnswerKey|TeachingReference|Face|Sticker)>[\s\S]*?(?:<\/\1>|$)/gi,'').replace(/<[^>]*$/,'');
+  renderAssistant(body,safe);
+  if(atBottom)host.scrollTop=host.scrollHeight;
 }
 
 export function fillProfileForm({ nameEl, genderEl, customEl, customWrap, profile }) {
