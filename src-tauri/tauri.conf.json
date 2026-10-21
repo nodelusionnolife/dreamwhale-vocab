@@ -20,6 +20,6 @@
     "targets": ["nsis"],
     "shortDescription": "离线词汇练习与梦鲸陪学",
     "icon": ["icons/icon.png", "icons/icon.ico"],
-    "windows": { "nsis": { "installMode": "currentUser", "languages": ["SimpChinese"], "displayLanguageSelector": false }, "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true } }
+    "windows": { "nsis": { "installMode": "currentUser", "template": "installer/installer.nsi", "languages": ["SimpChinese"], "displayLanguageSelector": false }, "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true } }
   }
 }
