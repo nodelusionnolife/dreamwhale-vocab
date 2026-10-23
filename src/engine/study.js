@@ -23,7 +23,29 @@ export function dayStart(now = Date.now()) {
   return day.getTime();
 }
 
-export function studyOverview(questions, state, now = Date.now()) {
+const stageOf = q => ['meaning', 'choice'].includes(q.type) ? 0 : ['fill', 'listening'].includes(q.type) ? 1 : q.type === 'writing' ? 3 : 2;
+
+export function reviewCandidates(questions, progress, now = Date.now()) {
+  const due = questions.filter(q => progress[progressKey(q)]?.dueAt <= now);
+  const dueWords = new Set(due.map(wordOf));
+  const learned = new Map();
+  for (const p of Object.values(progress)) {
+    if (!learned.has(p.word)) learned.set(p.word, []);
+    learned.get(p.word).push(p);
+  }
+  const advances = new Map();
+  for (const q of questions) {
+    const word = wordOf(q), history = learned.get(word);
+    if (!history || dueWords.has(word) || progress[progressKey(q)] || stageOf(q) === 0
+      || history.some(p => !p.streak || p.lastAt >= dayStart(now))) continue;
+    const candidates = advances.get(word) || [];
+    if (!candidates.length || stageOf(q) < stageOf(candidates[0])) advances.set(word, [q]);
+    else if (stageOf(q) === stageOf(candidates[0])) candidates.push(q);
+  }
+  return { due, advance: [...advances.values()].flat() };
+}
+
+export function studyOverview(questions, state, now = Date.now(), { audio = true, semantic = false } = {}) {
   const plan = { ...DEFAULT_PLAN, ...state.plan };
   const bankQuestions = questions.filter(q => matchesBank(q, plan.bank, plan.frequency));
   const bankKeys = new Set(bankQuestions.map(progressKey));
@@ -43,12 +65,14 @@ export function studyOverview(questions, state, now = Date.now()) {
   }
   const progress = Object.values(learningProgress(state)).filter((p) => words.has(p.word) && bankKeys.has(p.key));
   const newAvailable = catalog.filter((entry) => !firstSeen.has(entry.word)).length;
-  const due = new Set(progress.filter((p) => p.dueAt <= now).map((p) => p.word)).size;
+  const candidates = reviewCandidates(bankQuestions.filter(q => (plan.topic === 'all' || q.topic === plan.topic) && (audio || q.type !== 'listening') && (semantic || q.grading !== 'semantic')), Object.fromEntries(progress.map(p => [p.key, p])), now);
+  const due = new Set(candidates.due.map(wordOf)).size;
+  const advance = new Set(candidates.advance.map(wordOf)).size;
   const newTarget = Math.min(plan.newGoal, newAvailable + todayNew.size);
-  const reviewTarget = Math.min(plan.reviewGoal, due + todayReview.size);
+  const reviewTarget = Math.min(plan.reviewGoal, due + advance + todayReview.size);
   return {
     plan, total: catalog.length, seen: firstSeen.size,
-    newAvailable, due, newTarget, reviewTarget,
+    newAvailable, due, advance, reviewAvailable: due + advance, newTarget, reviewTarget,
     weak: new Set(progress.filter((p) => p.streak === 0).map((p) => p.word)).size,
     newDone: todayNew.size, reviewDone: todayReview.size,
     newRemaining: Math.max(0, newTarget - todayNew.size),
@@ -60,8 +84,19 @@ export function roundPending(state) {
   return Boolean(state.round && state.round.index < state.round.items.length && state.round.finishedAt === null);
 }
 
+export function pendingRounds(state) {
+  return [...(roundPending(state) ? [{ round: state.round, practice: state.active.practice }] : []), ...(state.pausedRounds || [])];
+}
+
+export function resumeRound(state, id) {
+  if (roundPending(state) && state.round.id === id) return state;
+  const saved = state.pausedRounds?.find(entry => entry.round.id === id);
+  if (!saved) throw new Error('这组练习已结束或已在另一页面变化，请查看最新进度。');
+  return { ...state, round: saved.round, active: { ...state.active, practice: saved.practice },
+    pausedRounds: pendingRounds(state).filter(entry => entry.round.id !== id) };
+}
+
 export function startRound(questions, state, { kind = 'new', count = 10, bank = state.plan?.bank || 'cet4', frequency = state.plan?.frequency || 'all', topic = state.plan?.topic || 'all', type = 'all', difficulty = 'all', word = null, questionKey = null, now = Date.now(), rng = Math.random, audio = true, semantic = false } = {}) {
-  if (roundPending(state)) throw new Error('还有一组练习没有完成，请先继续或结束这一组。');
   if (!ROUND_LABELS[kind]) throw new Error('练习类型无效。');
   const bankKeys = new Set(questions.filter(q => matchesBank(q, bank, frequency)).map(progressKey));
   const progress = Object.fromEntries(Object.entries(learningProgress(state)).filter(([key]) => bankKeys.has(key)));
@@ -71,13 +106,33 @@ export function startRound(questions, state, { kind = 'new', count = 10, bank = 
     && (difficulty === 'all' || q.difficulty === difficulty) && (!word || wordOf(q) === word)
     && (audio || q.type !== 'listening') && (semantic || q.grading !== 'semantic'));
   if (kind === 'new') pool = pool.filter((q) => !seenWords.has(wordOf(q)) && q.type !== 'listening');
-  if (kind === 'review') pool = pool.filter((q) => progress[progressKey(q)]?.dueAt <= now);
+  if (kind === 'review') { const candidates = reviewCandidates(pool, progress, now); pool = [...candidates.due, ...candidates.advance]; }
   if (kind === 'mistakes') pool = pool.filter((q) => progress[progressKey(q)]?.streak === 0);
   if (kind === 'favorites') pool = pool.filter((q) => state.favorites.includes(wordOf(q)));
+  const reserved = new Set(pendingRounds(state).flatMap(({ round }) => round.items.slice(round.index).map(item => item.question.id)));
+  const lastSeen = new Map();
+  const lastWord = new Map();
+  for (const event of state.events) {
+    lastSeen.set(event.questionId, Math.max(lastSeen.get(event.questionId) || 0, event.at));
+    lastWord.set(event.word, Math.max(lastWord.get(event.word) || 0, event.at));
+  }
   const shuffled = pool.map((q) => ({ q, order: rng() }));
   shuffled.sort((a, b) => {
-    if (kind === 'review') return progress[progressKey(a.q)].dueAt - progress[progressKey(b.q)].dueAt || a.order - b.order;
-    if (kind === 'new') return Number(!a.q.options) - Number(!b.q.options) || a.order - b.order;
+    if (kind === 'review') {
+      const dueA = progress[progressKey(a.q)]?.dueAt ?? Infinity, dueB = progress[progressKey(b.q)]?.dueAt ?? Infinity;
+      if (dueA !== dueB) return dueA - dueB;
+    }
+    const reservation = Number(reserved.has(a.q.id)) - Number(reserved.has(b.q.id));
+    if (reservation) return reservation;
+    if (['drill', 'favorites', 'mistakes', 'review'].includes(kind)) {
+      const exposure = Number(lastSeen.has(a.q.id)) - Number(lastSeen.has(b.q.id));
+      if (exposure) return exposure;
+      const recency = (lastSeen.get(a.q.id) || 0) - (lastSeen.get(b.q.id) || 0);
+      if (recency) return recency;
+      const wordRecency = (lastWord.get(wordOf(a.q)) || 0) - (lastWord.get(wordOf(b.q)) || 0);
+      if (wordRecency) return wordRecency;
+    }
+    if (kind === 'new') return stageOf(a.q) - stageOf(b.q) || Number(!a.q.options) - Number(!b.q.options) || a.order - b.order;
     return a.order - b.order;
   });
   const selected = [];
@@ -88,8 +143,8 @@ export function startRound(questions, state, { kind = 'new', count = 10, bank = 
     selectedWords.add(wordOf(q));
     if (selected.length >= Math.max(1, Math.min(30, count))) break;
   }
-  if (!selected.length) throw new Error(kind === 'review' ? '当前范围没有到期的词，稍后再来复习。' : '当前范围没有可练习的词，请换个主题或题型。');
-  return { ...state, round: { id: selected[0].id, kind, bank, frequency, topic, type, items: selected, index: 0, results: [], phase: 'recall', startedAt: now, finishedAt: null, endedEarly: false }, active: { ...state.active, practice: selected[0] } };
+  if (!selected.length) throw new Error(kind === 'review' ? '当前范围没有到期复习或待进阶的词，稍后再来。' : '当前范围没有可练习的词，请换个主题或题型。');
+  return { ...state, pausedRounds: pendingRounds(state), round: { id: selected[0].id, kind, bank, frequency, topic, type, items: selected, index: 0, results: [], phase: 'recall', startedAt: now, finishedAt: null, endedEarly: false }, active: { ...state.active, practice: selected[0] } };
 }
 
 export function resumeLegacyPractice(state, now = Date.now()) {
@@ -111,5 +166,27 @@ export function advanceRound(state, { now = Date.now(), end = false, expectedId 
   const active = { ...updated.active };
   if (finished) delete active.practice;
   else active.practice = state.round.items[index];
-  return { ...updated, active, round: { ...state.round, index, results: [...state.round.results, result], phase: 'recall', finishedAt: finished ? now : null, endedEarly: end && index < state.round.items.length } };
+  return { ...updated, active, closedRounds: finished ? [...new Set([...(state.closedRounds || []), state.round.id])] : (state.closedRounds || []), round: { ...state.round, index, results: [...state.round.results, result], phase: 'recall', finishedAt: finished ? now : null, endedEarly: end && index < state.round.items.length } };
+}
+
+export function mergePendingRounds(local, incoming) {
+  const current = resumeLegacyPractice(local);
+  const existing = pendingRounds(current);
+  const ids = new Set([...(current.closedRounds || []), ...(current.round ? [current.round.id] : []), ...existing.map(entry => entry.round.id)]);
+  const instances = new Set([...(current.round?.items || []), ...existing.flatMap(entry => entry.round.items)].map(item => item.id));
+  const incomingEvents = new Map(incoming.events.map(event => [event.id, JSON.stringify(event)]));
+  const newerInstances = new Set(current.events.filter(event => incomingEvents.get(event.id) !== JSON.stringify(event)).map(event => event.instanceId));
+  const restored = [];
+  for (const entry of pendingRounds(resumeLegacyPractice(incoming))) {
+    if (ids.has(entry.round.id) || entry.round.items.some(item => instances.has(item.id) || newerInstances.has(item.id))) continue;
+    restored.push(entry);
+    ids.add(entry.round.id);
+    for (const item of entry.round.items) instances.add(item.id);
+  }
+  const closedRounds = [...new Set([...(current.closedRounds || []), ...(incoming.closedRounds || [])])];
+  if (!roundPending(current) && restored.length) {
+    const first = restored.shift();
+    return { round: first.round, active: { ...current.active, practice: first.practice }, pausedRounds: [...existing, ...restored], closedRounds };
+  }
+  return { round: current.round, active: current.active, pausedRounds: [...existing.slice(roundPending(current) ? 1 : 0), ...restored], closedRounds };
 }

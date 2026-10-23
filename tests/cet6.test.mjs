@@ -64,8 +64,8 @@ test('CET6 questions grade their options and accept spellings with no broken ref
 test('banks partition questions while keeping shared spellings and legacy IDs intact', () => {
   const groups = Object.fromEntries(Object.keys(BANKS).map(b => [b, LEARNING_QUESTIONS.filter(q => matchesBank(q, b))]));
   assert.equal(groups.cet4.length + groups.cet6.length, groups.mixed.length);
-  assert.equal(groups.cet4.length, 1220 + CET4_SYLLABUS_QUESTIONS.length);
-  assert.equal(groups.cet6.length, 2702 + CET6_FOCUS_QUESTIONS.length);
+  assert.equal(groups.cet4.length, 1220 + CET4_SYLLABUS_QUESTIONS.length + 130 + 450 + 140 + 365 + 200 + 20 + 1319);
+  assert.equal(groups.cet6.length, 2702 + CET6_FOCUS_QUESTIONS.length + 130 + 218 + 140 + 238 + 200 + 20 + 925);
   assert.equal(catalogOf(groups.mixed).length, 5636);
   assert.equal(questionBank({ targetWords: ['appropriate'] }), 'cet4');
   assert.equal(questionBank(CET6_QUESTIONS.find(q => q.targetWords[0] === 'appropriate')), 'cet6');

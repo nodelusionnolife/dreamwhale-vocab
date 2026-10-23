@@ -253,6 +253,10 @@ export function renderThread({
         const button=el('button','ghost',label);button.disabled=busy;button.addEventListener('click',()=>onMessageAction(action,msg.id));actions.append(button);
       }
       if (!msg.compacted) actions.append(speechButton(msg.text, '朗读整条', '朗读整条消息', { full: true, scope: 'chat' }));
+      const branch = el('button', 'ghost', '创建分支');
+      branch.type = 'button'; branch.disabled = busy; branch.title = '从这条消息创建独立对话';
+      branch.addEventListener('click', () => onMessageAction('branch', msg.id));
+      actions.append(branch);
       wrap.append(actions);
     }
 
@@ -296,12 +300,12 @@ export function renderThread({
     hostEl.appendChild(thinking);
   }
 
-  // 末尾挂着一条没人回的用户消息 → 说明上一次请求没成功（超时、断网、关页面）
   const last = all[all.length - 1];
   if (!busy && onRegenerate && last && last.role === 'user') {
-    const bar = el('div', 'regen-bar');
-    bar.appendChild(el('span', 'regen-text', '这一条还没有回应（可能是超时、断网，或页面被关掉了）。'));
-    const btn = el('button', 'regen-btn', '重新生成');
+    const branch = Boolean(session?.branchOf);
+    const bar = el('div', branch ? 'regen-bar branch-ready' : 'regen-bar');
+    bar.appendChild(el('span', 'regen-text', branch ? '这条消息尚未收到回复，可以从这里继续。' : '这一条还没有回应（可能是超时、断网，或页面被关掉了）。'));
+    const btn = el('button', 'regen-btn', branch ? '生成回复' : '重新生成');
     btn.addEventListener('click', () => onRegenerate());
     bar.appendChild(btn);
     hostEl.appendChild(bar);

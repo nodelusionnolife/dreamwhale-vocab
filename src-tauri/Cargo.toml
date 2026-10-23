@@ -1,6 +1,6 @@
 [package]
 name = "dreamwhale-vocab"
-version = "0.6.0"
+version = "0.15.0"
 edition = "2021"
 
 [build-dependencies]

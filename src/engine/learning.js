@@ -1,11 +1,12 @@
-import { DEFAULT_PLAN, validateStudy } from './study-state.js';
+import { DEFAULT_PLAN, validateStudy, validatePracticeInstance } from './study-state.js';
 import { matchesBank } from './banks.js';
+import { resolvedProgressKey, resolvedAcceptedAnswers } from '../content/question-metadata.js';
 
 export const DAY = 86400000;
-export const SKILLS = { recognition: '认义', recall: '拼写回忆', usage: '搭配用法', formation: '词形', production: '表达', listening: '听辨' };
+export const SKILLS = { recognition: '认义', reading: '语境理解', recall: '拼写回忆', usage: '搭配用法', formation: '词形', production: '表达', listening: '听辨' };
 
 export function emptyLearning() {
-  return { version: 1, revision: 0, events: [], active: {}, favorites: [], plan: { ...DEFAULT_PLAN }, round: null, preferences: { topic: 'all', type: 'all', difficulty: 'all', queue: 'mixed' } };
+  return { version: 1, revision: 0, events: [], active: {}, favorites: [], plan: { ...DEFAULT_PLAN }, round: null, pausedRounds: [], closedRounds: [], preferences: { topic: 'all', type: 'all', difficulty: 'all', queue: 'mixed' } };
 }
 
 export function normalizeAnswer(value) {
@@ -27,7 +28,7 @@ export function gradeAnswer(question, input) {
   let value = normalizeAnswer(input);
   if (!value) throw new Error('先写下你的答案。');
   if (question.options && /^[a-h]$/.test(value)) value = normalizeAnswer(question.options[value.charCodeAt(0) - 97] || value);
-  const accepted = (question.accepts || [question.answer]).map(normalizeAnswer);
+  const accepted = resolvedAcceptedAnswers(question).map(normalizeAnswer);
   if (question.grading === 'semantic') return { status: 'needs-model', answer: String(input) };
   return { status: accepted.includes(value) ? 'correct' : 'incorrect', answer: String(input), explanation: question.explanation || '' };
 }
@@ -40,15 +41,15 @@ export function normalizeAssessment(raw) {
 }
 
 export function progressKey(question) {
-  return `${question.senseId || (question.targetWords || [question.answer])[0] + ':core'}|${question.skill || 'recall'}`;
+  return resolvedProgressKey(question, `${question.senseId || (question.targetWords || [question.answer])[0] + ':core'}|${question.skill || 'recall'}`);
 }
 
 export function learningProgress(state) {
   const map = Object.create(null);
   for (const event of [...state.events].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))) {
     if (['skipped', 'uncertain'].includes(event.status)) continue;
-    const key = event.key;
-    const p = map[key] || { key, word: event.word, seen: 0, independent: 0, streak: 0, lastAt: 0, dueAt: 0, skill: event.skill, lastStatus: '' };
+    const key = resolvedProgressKey(event, event.key);
+    const p = map[key] || { key, word: event.word, seen: 0, independent: 0, streak: 0, lastAt: 0, dueAt: 0, skill: key.split('|').at(-1), lastStatus: '' };
     p.seen += 1;
     p.lastAt = event.at;
     p.lastStatus = event.status;
@@ -115,7 +116,7 @@ export function learningSummary(state, now = Date.now()) {
 
 export function validateLearning(raw) {
   if (!raw || raw.version !== 1 || !Array.isArray(raw.events) || !raw.active || typeof raw.active !== 'object' || Array.isArray(raw.active)
-    || !Array.isArray(raw.favorites) || !raw.favorites.every((w) => typeof w === 'string') || raw.events.length > 30000) throw new Error('学习记录格式不正确或版本不受支持。');
+    || !Array.isArray(raw.favorites) || !raw.favorites.every((w) => typeof w === 'string')) throw new Error('学习记录格式不正确或版本不受支持。');
   const ids = new Set();
   for (const e of raw.events) {
     if (!e || typeof e.id !== 'string' || !e.id || ids.has(e.id) || typeof e.key !== 'string' || typeof e.word !== 'string'
@@ -128,13 +129,6 @@ export function validateLearning(raw) {
       || (e.question.options !== undefined && (!Array.isArray(e.question.options) || !e.question.options.every((s) => typeof s === 'string')))
       || (e.question.accepts !== undefined && (!Array.isArray(e.question.accepts) || !e.question.accepts.every((s) => typeof s === 'string'))))) throw new Error('错题的题目快照已损坏。');
   }
-  for (const a of Object.values(raw.active)) {
-    if (!a || typeof a.id !== 'string' || !a.question || typeof a.question.stem !== 'string' || typeof a.question.answer !== 'string'
-      || !['pending','correct','revealed','skipped'].includes(a.status) || !Number.isInteger(a.tries) || a.tries < 0
-      || !Number.isInteger(a.hintLevel) || a.hintLevel < 0 || a.hintLevel > 2
-      || (a.question.options !== undefined && (!Array.isArray(a.question.options) || !a.question.options.every((x) => typeof x === 'string')))
-      || (a.question.accepts !== undefined && (!Array.isArray(a.question.accepts) || !a.question.accepts.every((x) => typeof x === 'string')))
-      || (a.result !== null && a.result !== undefined && (!['correct','incorrect','uncertain'].includes(a.result.status) || typeof a.result.explanation !== 'string'))) throw new Error('进行中的题目已损坏。');
-  }
+  for (const a of Object.values(raw.active)) validatePracticeInstance(a);
   return { ...emptyLearning(), ...raw, ...validateStudy(raw), preferences: { ...emptyLearning().preferences, ...raw.preferences } };
 }

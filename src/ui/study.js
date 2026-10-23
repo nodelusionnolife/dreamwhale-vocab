@@ -1,7 +1,8 @@
-import { supportsSpeech } from '../platform/runtime.js';
+import { supportsSpeech, saveTextFile } from '../platform/runtime.js';
 import { LEARNING_QUESTIONS, LEARNING_WORDS, QUESTION_TYPES, TOPICS } from '../content/learning-bank.js';
 import { learningProgress, progressKey } from '../engine/learning.js';
-import { catalogOf, studyOverview, roundPending, dayStart } from '../engine/study.js';
+import { learningStatistics } from '../engine/learning-statistics.js';
+import { catalogOf, studyOverview, pendingRounds, dayStart } from '../engine/study.js';
 import { ROUND_LABELS } from '../engine/study-state.js';
 import { mistakeArchive } from '../engine/mistakes.js';
 import { localMediaUrl } from '../platform/media.js';
@@ -17,7 +18,7 @@ const node = (tag, cls = '', text = '') => { const e = document.createElement(ta
 const button = (label, action, cls = '') => { const e = node('button', cls, label); e.type = 'button'; e.addEventListener('click', action); return e; };
 const labels = { learn: '今日学习', library: '词库', practice: '专项训练' };
 
-export function createStudyViews({ host, getState, questionCard, start, end, savePlan, favorite, exportRecords, importRecords, isBusy, canUseModel, openSettings, navigate, pause }) {
+export function createStudyViews({ host, getState, questionCard, start, resume, end, savePlan, favorite, exportRecords, importRecords, isBusy, canUseModel, openSettings, navigate, pause }) {
   const catalogs = Object.fromEntries(Object.keys(BANKS).map(bank => [bank, Object.fromEntries(Object.keys(FREQUENCIES).map(frequency => [frequency, catalogOf(LEARNING_QUESTIONS.filter(q => matchesBank(q, bank, frequency)))]))]));
   const catalogFor = state => catalogs[state.plan.bank][state.plan.frequency || 'all'];
   const sixWords = new Map(CET6_WORDS.map(entry => [entry.word, entry]));
@@ -31,11 +32,19 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
   let mistakeFilter = 'pending';
   let mistakeQuery = '';
   let libraryTopic = 'all';
+  let libraryPage = 1;
+  const pageSize = 40;
   let query = '';
   let selected = null;
   let trainingTopic = 'all';
   let difficulty = 'all';
+  let trainingCount = 10;
   let notice = null;
+
+  async function exportStatistics() {
+    try { await saveTextFile('dreamwhale-question-statistics.json', JSON.stringify({ kind: 'dreamwhale-question-statistics', version: 1, createdAt: new Date().toISOString(), ...learningStatistics(getState(), LEARNING_QUESTIONS) }, null, 2)); }
+    catch (error) { notice = { text: error.message, error: true }; render(); }
+  }
 
   function select(title, value, options, change) {
     const label = node('label', 'study-filter', title);
@@ -62,7 +71,7 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
 
   function action(label, run, state, cls = 'primary') {
     const b = button(label, run, cls);
-    b.disabled = isBusy() || roundPending(state);
+    b.disabled = isBusy();
     return b;
   }
 
@@ -77,7 +86,7 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
     for (const [id, name] of Object.entries(BANKS)) {
       const tab = button(name, () => {
         if (!savePlan({ bank: id })) return;
-        selected = null; planEditing = false; libraryTopic = trainingTopic = difficulty = 'all'; render();
+        selected = null; libraryPage = 1; planEditing = false; libraryTopic = trainingTopic = difficulty = 'all'; render();
       }, state.plan.bank === id ? 'active' : 'ghost');
       tab.setAttribute('aria-pressed', String(state.plan.bank === id)); tab.disabled = isBusy(); tabs.append(tab);
     }
@@ -86,7 +95,7 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
     for (const [id, name] of Object.entries(FREQUENCIES)) {
       const tab = button(name, () => {
         if (!savePlan({ frequency: id })) return;
-        selected = null; planEditing = false; libraryTopic = trainingTopic = difficulty = 'all'; render();
+        selected = null; libraryPage = 1; planEditing = false; libraryTopic = trainingTopic = difficulty = 'all'; render();
       }, (state.plan.frequency || 'all') === id ? 'active' : 'ghost');
       tab.setAttribute('aria-pressed', String((state.plan.frequency || 'all') === id)); tab.disabled = isBusy(); frequencies.append(tab);
     }
@@ -94,7 +103,7 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
     info.append(node('summary', '', '词表来源与收录范围'),
       node('p', '', '四级：大纲未标★主词及原有扩展练习；六级：大纲★标记词；混合：合并两类。选择用于学习、词库、专项和聊天出题。'),
       node('p', '', `大纲词条：四级 ${CET4_WORDS.length.toLocaleString()} 个拼法，六级 ${CET6_WORDS.length.toLocaleString()} 个主词。四级并列拼法分列，同形词合并；派生词栏未另行展开。练习为自编题。`),
-      node('p', '', '高频：同级别两个渠道共同收录的词。资料为历史备考词表，不是官方考频排名。六级中的基础词可在四级或混合题库练习。'),
+      node('p', '', '高频：同级别两个渠道共同收录的词。资料为历史备考词表，不是官方考频排名，也未按真题年份统计。题目难度按具体任务区分，每个级别均有基础与进阶练习。'),
       sourceLink(CET6_SOURCE.title, CET6_SOURCE.indexUrl),
       node('p', '', '中文释义整理自 ECDICT，并校订部分词义与词性。'));
     const references = node('ul');
@@ -107,19 +116,27 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
   }
 
   function continuation(state) {
-    if (!roundPending(state)) return;
-    const box = node('section', 'resume-card');
-    const text = node('div');
-    text.append(node('strong', '', '有一组练习等你继续'), node('p', 'muted', `${state.round.bank ? BANKS[state.round.bank] + ' · ' : ''}${FREQUENCIES[state.round.frequency || 'all']} · ${ROUND_LABELS[state.round.kind]} · 已完成 ${state.round.index} / ${state.round.items.length} 词`));
-    const controls = node('div', 'actions');
-    const resume = button('继续本组', () => { studying = true; render(); }, 'primary');
-    const finish = button('结束本组', () => { studying = true; end(state.active.practice.id); }, 'ghost');
-    resume.disabled = finish.disabled = isBusy();
-    controls.append(resume, finish); box.append(text, controls); host.append(box);
+    const pending = pendingRounds(state);
+    if (!pending.length) return;
+    const list = node('details', 'pending-rounds'); list.open = true;
+    list.append(node('summary', '', `未完成的练习 · ${pending.length} 组`), node('p', 'muted', '可以继续其中一组，也可以在下方开启其他练习。'));
+    for (const { round, practice } of pending) {
+      const box = node('section', 'resume-card');
+      const text = node('div');
+      text.append(node('strong', '', `${ROUND_LABELS[round.kind]}${round.type !== 'all' && QUESTION_TYPES[round.type] ? ' · ' + QUESTION_TYPES[round.type] : ''}`),
+        node('p', 'muted', `${round.bank ? BANKS[round.bank] + ' · ' : ''}${FREQUENCIES[round.frequency || 'all']} · 已完成 ${round.index} / ${round.items.length} 词`),
+        node('p', 'muted', `${TOPICS[round.topic] || '全部主题'} · ${new Date(round.startedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 开始`));
+      const controls = node('div', 'actions');
+      const continueButton = button('继续本组', () => resume(round.id), 'primary');
+      const finish = button('结束本组', () => end(practice.id, round.id), 'ghost');
+      continueButton.disabled = finish.disabled = isBusy();
+      controls.append(continueButton, finish); box.append(text, controls); list.append(box);
+    }
+    host.append(list);
   }
 
   function home(state) {
-    const overview = studyOverview(LEARNING_QUESTIONS, state);
+    const overview = studyOverview(LEARNING_QUESTIONS, state, Date.now(), { audio: supportsSpeech(), semantic: canUseModel() });
     const welcome = heading('今日学习', new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }));
     welcome.classList.add('scene-hero');
     welcome.append(node('p', 'scene-greeting', '海风翻开书页，今天也一起记住一点。'));
@@ -152,12 +169,12 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
     }
     const controls = node('div', 'plan-start');
     const newCount = Math.min(overview.newRemaining || 5, overview.newAvailable, 10);
-    const reviewCount = Math.min(overview.reviewRemaining || 5, overview.due, 10);
+    const reviewCount = Math.min(overview.reviewRemaining || 5, overview.reviewAvailable, 10);
     const learn = action(newCount ? `${overview.newRemaining ? '开始新学' : '再学一组'} · ${newCount} 词` : '当前范围已学完', () => start('new', { count: newCount }), state);
-    const review = action(reviewCount ? `到期复习 · ${reviewCount} 词` : '暂无到期复习', () => start('review', { count: reviewCount }), state, 'secondary');
+    const review = action(reviewCount ? `复习与进阶 · ${reviewCount} 词` : '暂无复习与进阶', () => start('review', { count: reviewCount }), state, 'secondary');
     learn.disabled ||= !newCount; review.disabled ||= !reviewCount;
     controls.append(learn, review); plan.append(controls);
-    plan.append(node('p', 'plan-footnote', `${overview.total} 个词与表达 · 已接触 ${overview.seen} 个 · 当前 ${overview.due} 个词到期`));
+    plan.append(node('p', 'plan-footnote', `${overview.total} 个词与表达 · 已接触 ${overview.seen} 个 · ${overview.due} 个词到期 · ${overview.advance} 个词可进阶`), node('p', 'muted', '先复习到期内容，再练已学词的拼写和用法。进阶安排从次日开始。'));
     const rail = node('section', 'surface weekly-card'); rail.append(node('h2', '', '最近七天 · 全部题库'));
     const week = node('div', 'week-grid');
     for (let offset = 6; offset >= 0; offset--) {
@@ -177,6 +194,13 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
       const tile = button('', run, 'route-card'); tile.append(illustration(anchor, 'route-anchor'), node('strong', '', titleText), node('span', '', body), node('b', '', '→')); entry.append(tile);
     }
     host.append(entry);
+    const statistics = learningStatistics(state, LEARNING_QUESTIONS);
+    if (statistics.types.length) {
+      const panel = node('details', 'surface bank-source');
+      panel.append(node('summary', '', '各题型学习情况 · 全部题库'), node('p', 'muted', '每次遇到一道题计一次练习，答对率只看首次作答；提示和讲解按本次是否使用计数。'));
+      for (const row of statistics.types) panel.append(node('p', '', `${QUESTION_TYPES[row.type] || row.type}：练习 ${row.attempts} 次，首次独立答对 ${Math.round(row.correct / row.attempts * 100)}%，用过提示 ${row.hinted} 次，看讲解 ${row.revealed} 次，反复出错 ${row.repeatedErrors} 题。`));
+      panel.append(button('导出题目统计', exportStatistics, 'ghost')); host.append(panel);
+    }
   }
 
   function definition(entry) {
@@ -244,15 +268,14 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
     }
     const filters = node('div', 'library-controls');
     const search = node('input', 'word-search'); search.placeholder = '查找单词、短语或释义'; search.setAttribute('aria-label', '查找词汇'); search.value = query;
-    filters.append(search, select('主题', libraryTopic, { all: '全部主题', ...TOPICS }, (value) => { libraryTopic = value; render(); }));
+    filters.append(search, select('主题', libraryTopic, { all: '全部主题', ...TOPICS }, (value) => { libraryTopic = value; libraryPage = 1; render(); }));
     host.append(filters);
     const tabs = node('div', 'filter-tabs'); tabs.setAttribute('aria-label', '词库分类');
     for (const [value, text] of Object.entries({ all: '全部', new: '未学', learning: '已学', due: '待复习', weak: '待巩固', favorites: '收藏' })) {
-      const tab = button(text, () => { libraryFilter = value; render(); }, libraryFilter === value ? 'active' : 'ghost'); tab.setAttribute('aria-pressed', String(libraryFilter === value)); tabs.append(tab);
+      const tab = button(text, () => { libraryFilter = value; libraryPage = 1; render(); }, libraryFilter === value ? 'active' : 'ghost'); tab.setAttribute('aria-pressed', String(libraryFilter === value)); tabs.append(tab);
     }
     host.append(tabs);
     const list = node('div', 'library-list'); host.append(list);
-    let visibleCount = 80;
     function draw() {
       list.replaceChildren();
       const matches = catalog.filter((entry) => {
@@ -262,9 +285,24 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
             || libraryFilter === 'due' && status === '待复习' || libraryFilter === 'weak' && entry.questions.some((q) => progress[progressKey(q)]?.streak === 0)
             || libraryFilter === 'favorites' && state.favorites.includes(entry.word));
       });
-      list.append(node('p', 'result-count', `${matches.length} 个词与表达`));
+      const pages = Math.max(1, Math.ceil(matches.length / pageSize));
+      libraryPage = Math.min(libraryPage, pages);
+      const offset = (libraryPage - 1) * pageSize;
+      const count = node('p', 'result-count', matches.length ? `共 ${matches.length} 个词与表达 · 显示 ${offset + 1}–${Math.min(offset + pageSize, matches.length)}` : '0 个词与表达');
+      count.setAttribute('role', 'status'); list.append(count);
+      function pagination(position) {
+        const nav = node('nav', 'library-pagination'); nav.setAttribute('aria-label', `词库${position}翻页`);
+        const changePage = (value) => { libraryPage = value; draw(); list.querySelector('.library-pagination').focus(); list.scrollIntoView({ block: 'start' }); };
+        nav.tabIndex = -1;
+        const previous = button('上一页', () => changePage(libraryPage - 1), 'secondary'); previous.disabled = libraryPage === 1;
+        const next = button('下一页', () => changePage(libraryPage + 1), 'secondary'); next.disabled = libraryPage === pages;
+        const jump = select(`页码 / ${pages}`, String(libraryPage), Object.fromEntries(Array.from({ length: pages }, (_, i) => [i + 1, String(i + 1)])), value => changePage(Number(value)));
+        jump.querySelector('select').setAttribute('aria-label', '页码');
+        nav.append(previous, jump, next); return nav;
+      }
+      if (matches.length) list.append(pagination('顶部'));
       if (!matches.length) list.append(node('p', 'empty-state', '这里暂时没有词，试试其他分类或主题。'));
-      for (const entry of matches.slice(0, visibleCount)) {
+      for (const entry of matches.slice(offset, offset + pageSize)) {
         const row = node('article', 'library-row');
         const link = button('', () => { selected = entry.word; render(); }, 'word-open');
         link.append(node('strong', '', entry.word), node('span', 'muted', definition(entry)));
@@ -272,9 +310,9 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
         const actions = node('div', 'word-row-actions'); actions.append(speechButton(entry.questions.find(q => q.audioText)?.audioText || entry.word, '朗读', `朗读 ${entry.word}`), favorite(entry.word, state));
         row.append(link, status, actions); list.append(row);
       }
-      if (matches.length > visibleCount) list.append(button(`加载更多 · 还有 ${matches.length - visibleCount} 词`, () => { visibleCount += 80; draw(); }, 'secondary'));
+      if (matches.length) list.append(pagination('底部'));
     }
-    search.addEventListener('input', () => { query = search.value; visibleCount = 80; draw(); }); draw();
+    search.addEventListener('input', () => { query = search.value; libraryPage = 1; draw(); }); draw();
     if (['favorites', 'weak', 'due'].includes(libraryFilter)) {
       const kind = { favorites: 'favorites', weak: 'mistakes', due: 'review' }[libraryFilter];
       host.append(action(`开始${ROUND_LABELS[kind]}`, () => start(kind, { count: 10, topic: libraryTopic }), state));
@@ -332,11 +370,11 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
   }
 
   function training(state) {
-    host.append(heading('专项训练', '每组最多 10 个词，练完看结果。', 'practice'));
+    host.append(heading('专项训练', '选择每组题数，每词一道；词量不足时按实际数量出题。', 'practice'));
     bankPicker(state);
     continuation(state);
     const filters = node('div', 'training-filters');
-    filters.append(select('训练主题', trainingTopic, { all: '全部主题', ...TOPICS }, (value) => { trainingTopic = value; render(); }), select('训练难度', difficulty, { all: '基础与进阶', basic: '基础', advanced: '进阶' }, (value) => { difficulty = value; render(); })); host.append(filters);
+    filters.append(select('训练主题', trainingTopic, { all: '全部主题', ...TOPICS }, (value) => { trainingTopic = value; render(); }), select('训练难度', difficulty, { all: '基础与进阶', basic: '基础', advanced: '进阶' }, (value) => { difficulty = value; render(); }), select('每组题数', trainingCount, { 10: '10 题', 20: '20 题', 30: '30 题' }, (value) => { trainingCount = Number(value); render(); })); host.append(filters);
     const grid = node('div', 'training-grid');
     const descriptions = { choice: '放进句子，辨认词义。', fill: '借助语境，主动想起单词。', meaning: '辨认单词与释义的对应关系。', listening: '听读音，写出单词。', collocation: '把常用搭配记在一起。', formation: '看清词性，选对形式。', confusion: '辨清长得像、意思近的词。', phrase: '练习常见短语与介词。', correction: '发现错误，改成自然表达。', reading: '在短文中判断具体含义。', writing: '把单词用进自己的句子。' };
     for (const [type, title] of Object.entries(QUESTION_TYPES)) {
@@ -346,7 +384,7 @@ export function createStudyViews({ host, getState, questionCard, start, end, sav
       const category = ['choice', 'meaning', 'confusion', 'reading'].includes(type) ? '理解词义' : ['fill', 'listening'].includes(type) ? '主动回忆' : '学会运用';
       card.append(node('span', 'training-type', category), node('h2', '', title), node('p', 'muted', descriptions[type]), node('p', 'training-count', `${count} 个词 · ${pool.length} 道题`));
       const requiresModel = type === 'writing' && !canUseModel();
-      const run = action(requiresModel ? '配置模型后练习' : '开始训练 →', () => requiresModel ? openSettings() : start('drill', { type, topic: trainingTopic, difficulty, count: 10 }), state, 'secondary');
+      const run = action(requiresModel ? '对照范例练习' : '开始训练 →', () => start('drill', { type, topic: trainingTopic, difficulty, count: trainingCount, ...(type === 'writing' ? { semantic: true } : {}) }), state, 'secondary');
       run.disabled ||= !count || type === 'listening' && !(supportsSpeech());
       card.append(run); grid.append(card);
     }

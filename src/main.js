@@ -653,7 +653,7 @@ function editDialog(title, value, multiline = false) {
 }
 
 async function messageAction(action,id) {
-  if(chatBusy)return;
+  if(chatBusy || learning?.isBusy())return;
   const snapshot=session;
   const message=snapshot?.messages.find(m=>m.id===id);if(!message)return;
   try {
@@ -668,6 +668,10 @@ async function messageAction(action,id) {
     const next=forkConversation(snapshot,id,{editText,regenerate:action==='regenerate'});
     if(!persistSession(next))return;
     session=next;profile=client.profile(session.modelId);restoreDraft();renderChat();
+    if(action==='branch') {
+      chatToast('已创建分支，原对话已保留');
+      return;
+    }
     await regenerateLast();
   } catch(error){chatToast(error.message,{error:true});}
 }

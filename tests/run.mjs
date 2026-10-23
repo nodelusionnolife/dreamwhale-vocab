@@ -1815,7 +1815,7 @@ t('内联查表覆盖题库全部目标词（漏词会让提示与解析变空�
   eq(broken.slice(0, 5).map((q) => q.id), [], '这些题的解析为空，说明查表漏了词——跑 node tools/refresh-question-lookup.mjs');
 });
 t('扩展题库规模与原始选择题兼容', () => {
-  const original = allQuestions().filter(q => !/^dw-c[46]-/.test(q.id));
+  const original = allQuestions().filter(q => !/^dw-c[46]-/.test(q.id) && q.source !== 'project-original-pairs-2026');
   eq(original.length, 1276);
   eq(original.filter((q) => q.type === 'choice').length, 155);
   eq(original.filter((q) => q.type === 'fill').length, 517);

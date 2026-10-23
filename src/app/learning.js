@@ -4,7 +4,7 @@ import { LEARNING_QUESTIONS, QUESTION_TYPES, TOPICS } from '../content/learning-
 import { createQuestionInstance, gradeAnswer, normalizeAssessment, recordOutcome, selectQuestion } from '../engine/learning.js';
 import { loadLearning, updateLearning, exportLearning, importLearning } from '../storage/learning.js';
 import { callJson, modelReadiness } from '../gateway/model.js';
-import { roundPending, startRound, advanceRound, resumeLegacyPractice } from '../engine/study.js';
+import { roundPending, startRound, advanceRound, resumeRound, resumeLegacyPractice } from '../engine/study.js';
 import { createStudyViews } from '../ui/study.js';
 
 const el = (tag, className = '', text = '') => {
@@ -115,8 +115,9 @@ export function createLearningController({ host, chatHost, getProfile, openSetti
     try {
       mutate((state) => {
         ensureCurrent(state, context, instance);
-        const nextState = recordOutcome(state, instance, { status: 'revealed' }, { source: context === 'practice' && roundPending(state) ? `study:${state.round.kind}` : context });
-        return { ...nextState, active: { ...state.active, [context]: { ...instance, status: 'revealed', result: null } } };
+        const response = drafts.get(context) ?? instance.response ?? '';
+        const nextState = recordOutcome(state, instance, { status: 'revealed', answer: response }, { source: context === 'practice' && roundPending(state) ? `study:${state.round.kind}` : context });
+        return { ...nextState, active: { ...state.active, [context]: { ...instance, response, status: 'revealed', result: null } } };
       });
       render();
     } catch (error) { report(error); }
@@ -214,11 +215,13 @@ export function createLearningController({ host, chatHost, getProfile, openSetti
     form.addEventListener('submit', (e) => { e.preventDefault(); if (!done && !working) submit(context, instance, input.value); });
     const actions = el('div', 'practice-actions');
     if (!done) {
-      const send = el('button', 'primary', working ? '正在评价…' : '检查答案');
+      const selfReview = q.grading === 'semantic' && !modelReadiness(getProfile()).ready;
+      if (selfReview) form.append(el('p', 'muted', '先写下你的表达，再对照范例。配置模型后可获得评价；对照练习不计为独立答对。'));
+      const send = el('button', 'primary', working ? '正在评价…' : selfReview ? '配置模型评价' : '检查答案');
       send.type = 'submit'; send.disabled = working; actions.append(send);
       const h = button(instance.hintLevel ? '再给一点提示' : '给我提示', () => hint(context, instance), 'ghost');
       h.disabled = working || instance.hintLevel >= 2;
-      const answer = button('查看讲解', () => reveal(context, instance), 'ghost'); answer.disabled = working;
+      const answer = button(selfReview ? '查看参考表达' : '查看讲解', () => reveal(context, instance), 'ghost'); answer.disabled = working;
       actions.append(h, answer);
     } else actions.append(button(context === 'practice' ? (state.round?.index === state.round?.items.length - 1 ? '查看本组结果 →' : '下一词 →') : '继续练一题 →', () => next(context, instance.id), 'primary'));
     form.append(actions);
@@ -241,11 +244,27 @@ export function createLearningController({ host, chatHost, getProfile, openSetti
     footer.append(favorite(q.targetWords?.[0] || q.answer, state));
     if (!done) { const skip = button('跳过此题', () => next(context, instance.id), 'ghost'); skip.disabled = working; footer.append(skip); }
     wrap.append(footer);
+    if (instance.result) {
+      const feedback = el('details', 'bank-source');
+      feedback.append(el('summary', '', '对判分有疑问'));
+      const reason = el('textarea', 'answer-input');
+      reason.setAttribute('aria-label', '判分反馈说明'); reason.maxLength = 1000;
+      reason.placeholder = '说明你认为合理的答案或题目问题…';
+      feedback.append(reason, button('导出反馈文件', async () => {
+        try {
+          const content = { kind: 'dreamwhale-question-feedback', version: 1, createdAt: new Date().toISOString(),
+            questionId: q.id, questionVersion: q.version || 1, stem: q.stem, type: q.type,
+            submission: instance.response || '', result: instance.result, reason: reason.value.trim() };
+          await saveTextFile(`question-feedback-${q.id}.json`, JSON.stringify(content, null, 2));
+        } catch (error) { notify(error.message); }
+      }, 'ghost'), el('p', 'muted', '保存后可把文件交给题库维护者。'));
+      wrap.append(feedback);
+    }
     return wrap;
   }
 
   function start(kind, options = {}) {
-    if (busy.size) return;
+    if (busy.size || !saveDraft()) return;
     try {
       mutate((state) => startRound(LEARNING_QUESTIONS, state, { kind, audio: supportsAudio(), semantic: modelReadiness(getProfile()).ready, ...options }));
       drafts.delete('practice');
@@ -255,9 +274,21 @@ export function createLearningController({ host, chatHost, getProfile, openSetti
     } catch (error) { report(error); }
   }
 
-  function end(expectedId) {
-    if (busy.size) return;
-    try { mutate((state) => advanceRound(state, { end: true, expectedId })); drafts.delete('practice'); render(); }
+  function resume(id) {
+    if (busy.size || !saveDraft()) return;
+    try {
+      mutate((state) => resumeRound(state, id));
+      drafts.delete('practice'); views.showRound(); render();
+      host.scrollIntoView({ block: 'start' });
+    } catch (error) { report(error); }
+  }
+
+  function end(expectedId, roundId) {
+    if (busy.size || !saveDraft()) return;
+    try {
+      mutate((state) => advanceRound(roundId ? resumeRound(state, roundId) : state, { end: true, expectedId }));
+      drafts.delete('practice'); views.showRound(); render();
+    }
     catch (error) { report(error); }
   }
 
@@ -281,7 +312,7 @@ export function createLearningController({ host, chatHost, getProfile, openSetti
 
   async function importRecords() {
     try {
-      const text = await pickTextFile(8 * 1024 * 1024);
+      const text = await pickTextFile(64 * 1024 * 1024);
       if (text === null) return;
       importLearning(text);
       await flushStorage();
@@ -325,7 +356,7 @@ export function createLearningController({ host, chatHost, getProfile, openSetti
   }
 
   globalThis.addEventListener('storage', (e) => { if (e.key === 'dreamwhale:learning:v1') render(); });
-  views = createStudyViews({ host, getState: () => loadLearning().state, questionCard, start, end, favorite, exportRecords, importRecords,
+  views = createStudyViews({ host, getState: () => loadLearning().state, questionCard, start, resume, end, favorite, exportRecords, importRecords,
     isBusy: () => busy.size > 0, canUseModel: () => modelReadiness(getProfile()).ready, openSettings, navigate, pause: saveDraft,
     savePlan: (plan) => { try { mutate((state) => ({ ...state, plan: { ...state.plan, ...plan } })); return true; } catch (error) { report(error); return false; } },
   });

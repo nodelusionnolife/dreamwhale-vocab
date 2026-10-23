@@ -5,6 +5,14 @@ import { EXPANSION_TASKS } from './expansion-tasks.js';
 import { CET6_QUESTIONS } from './cet6-questions.js';
 import { CET4_SYLLABUS_QUESTIONS } from './cet4-syllabus-questions.js';
 import { CET6_FOCUS_QUESTIONS } from './cet6-focus.js';
+import { HIGH_FREQUENCY_QUESTIONS } from './high-frequency-questions.js';
+import { questionMetadata } from './question-metadata.js';
+import { COVERAGE_QUESTIONS } from './high-frequency-coverage.js';
+import { SPECIALTY_QUESTIONS } from './high-frequency-specialties.js';
+import { EXTENSION_QUESTIONS } from './high-frequency-extension.js';
+import { USAGE_QUESTIONS } from './high-frequency-usage.js';
+import { TRANSFER_QUESTIONS } from './high-frequency-transfer.js';
+import { buildHighFrequencyPairs } from './high-frequency-pairs.js';
 
 export const QUESTION_TYPES = {
   choice: '语境选择', fill: '提示填空', collocation: '固定搭配', formation: '词形变化',
@@ -178,5 +186,7 @@ const extra = tasks.map(([type, word, topic, stem, answer, wrong, explanation], 
   variantGroup: `dw-skill-${i + 1}`, source: 'project-original',
 }));
 
-export const LEARNING_QUESTIONS = [...legacy, ...vocabulary, ...extra, ...EXPANSION_VOCABULARY, ...EXPANSION_TASKS, ...CET6_QUESTIONS, ...CET4_SYLLABUS_QUESTIONS, ...CET6_FOCUS_QUESTIONS];
-export const LEARNING_BANK_VERSION = '2026-10-learning-v6';
+const previousQuestions = [...legacy, ...vocabulary, ...extra, ...EXPANSION_VOCABULARY, ...EXPANSION_TASKS, ...CET6_QUESTIONS, ...CET4_SYLLABUS_QUESTIONS, ...CET6_FOCUS_QUESTIONS, ...HIGH_FREQUENCY_QUESTIONS, ...COVERAGE_QUESTIONS, ...SPECIALTY_QUESTIONS, ...EXTENSION_QUESTIONS, ...USAGE_QUESTIONS, ...TRANSFER_QUESTIONS].map(questionMetadata);
+export const PAIRED_QUESTIONS = buildHighFrequencyPairs(previousQuestions).map(questionMetadata);
+export const LEARNING_QUESTIONS = [...previousQuestions, ...PAIRED_QUESTIONS];
+export const LEARNING_BANK_VERSION = '2026-10-learning-v11';

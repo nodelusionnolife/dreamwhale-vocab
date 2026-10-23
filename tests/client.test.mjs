@@ -25,6 +25,32 @@ test('session search respects archive and trash with pinned ordering',()=>{
   const rows=[{id:'a',title:'猫',updatedAt:5},{id:'b',title:'英语',searchText:'猫',pinned:true,updatedAt:1},{id:'c',title:'猫',archived:true,updatedAt:8},{id:'d',title:'猫',deletedAt:10}];
   assert.deepEqual(filterSessions(rows,{query:'猫'}).map(s=>s.id),['b','a']);assert.deepEqual(filterSessions(rows,{filter:'trash'}).map(s=>s.id),['d']);assert.deepEqual(filterSessions(rows,{filter:'archived'}).map(s=>s.id),['c']);
 });
+test('plain branches include the selected message, keep the original and survive saving',()=>{
+  storage();const original=conversation();original.modelId='model-one';
+  original.assistantConfig={mode:'speaking',instructions:'练习口语',memory:'学校'};
+  original.messages[1].questionId='q-one';
+  original.questionContext={sourceMessageId:original.messages[1].id,questionId:'q-one'};
+  assert.equal(saveChatSession(original).ok,true);saveDraft(original.id,'原对话未发送草稿');
+  const before=JSON.stringify(loadChatSession(original.id));
+  for(const at of [0,1,3]) {
+    const next=forkConversation(original,original.messages[at].id);
+    assert.equal(next.messages.length,at+1);assert.equal(next.messages.at(-1).text,original.messages[at].text);
+    assert.equal(next.modelId,'model-one');assert.equal(next.assistantConfig.mode,'speaking');
+    assert.equal(next.branchOf,original.id);assert.notEqual(next.id,original.id);
+    for(let i=0;i<next.messages.length;i++) {assert.notEqual(next.messages[i].id,original.messages[i].id);assert.equal(next.messages[i].parentId,i?next.messages[i-1].id:null);}
+    if(at>0)assert.equal(next.questionContext.sourceMessageId,next.messages[1].id);else assert.equal(next.questionContext,null);
+    assert.equal(saveChatSession(next).ok,true);
+    const loaded=loadChatSession(next.id);assert.equal(loaded.branchOf,original.id);assert.equal(loaded.messages.length,at+1);
+    assert.equal(loadDraft(next.id),'');
+  }
+  assert.equal(JSON.stringify(loadChatSession(original.id)),before);assert.equal(loadDraft(original.id),'原对话未发送草稿');
+});
+test('a branch storage failure does not publish a new conversation or change the original',()=>{
+  const s=storage();const original=conversation();assert.equal(saveChatSession(original).ok,true);
+  const next=forkConversation(original,original.messages[1].id);const before=JSON.stringify(loadSessionList());
+  s.fail(key=>key==='word-blade:chat-index');assert.equal(saveChatSession(next).ok,false);
+  assert.equal(JSON.stringify(loadSessionList()),before);assert.equal(loadChatSession(original.id).messages.length,4);
+});
 test('model profiles and drafts remain independent and survive reload',()=>{
   storage();const first=modelEntry({id:'a',name:'A',profile:{apiKey:'secret',model:'test'}});saveModels({entries:[first,modelEntry({id:'b'})],activeId:'a'});assert.equal(loadModels().entries[0].profile.apiKey,'secret');
   saveDraft('a','草稿');saveDraft('b','另一段');assert.equal(loadDraft('a'),'草稿');saveDraft('a','');assert.equal(loadDraft('a'),'');assert.equal(loadDraft('b'),'另一段');

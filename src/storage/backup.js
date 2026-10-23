@@ -1,7 +1,8 @@
 import { appStorage } from '../platform/runtime.js';
 import { loadSessionList, loadChatSession, importChatSessions, loadProfile, loadUserProfile } from './save.js';
 import { normalizeProfile } from '../engine/chat.js';
-import { loadLearning, exportLearning } from './learning.js';
+import { loadLearning, exportLearning, prepareLearningSave, finishLearningSave } from './learning.js';
+import { mergePendingRounds, pendingRounds } from '../engine/study.js';
 import { loadModels, loadPreferences, loadCompanion } from './client.js';
 import { validateLearning } from '../engine/learning.js';
 import { modelEntry, newId, normalizePreferences, normalizeCompanion, validateConversation } from '../engine/client.js';
@@ -19,7 +20,7 @@ export function createBackup(storage = appStorage()) {
   });
   if (JSON.stringify(loadSessionList()) !== JSON.stringify(list)) throw new Error('备份期间另一页面更新了对话，请重试。');
   return { kind:'dreamwhale-client', version:1, id:newId('backup'), createdAt:new Date().toISOString(),
-    chats, learning:JSON.parse(exportLearning(loadLearning(storage).state)),
+    chats, learning:JSON.parse(exportLearning(loadLearning(storage).state, { includeRounds: true })),
     models:loadModels(loadProfile(),storage).entries.map(e=>modelEntry(e,{secrets:false})),
     preferences:loadPreferences(storage), companion:loadCompanion(storage), userProfile:loadUserProfile(),
     voiceService:normalizeVoiceService(loadVoiceService(storage), { secrets:false }),
@@ -27,7 +28,7 @@ export function createBackup(storage = appStorage()) {
 }
 
 export function parseBackup(text) {
-  if (typeof text !== 'string' || text.length > 24000000) throw new Error('备份不能超过 24 MB。');
+  if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > 64 * 1024 * 1024) throw new Error('备份不能超过 64 MB。');
   const data = scrub(JSON.parse(text));
   if (data.kind !== 'dreamwhale-client' || data.version !== 1 || typeof data.id !== 'string' || !data.id || data.id.length > 200 || !Array.isArray(data.chats) || data.chats.length > 1000) throw new Error('备份格式或版本不受支持。');
   const chats = data.chats.map(validateConversation);
@@ -69,9 +70,11 @@ export function restoreBackup(data, { includeSettings = false, storage = appStor
   const events = new Map(data.learning.events.map(e=>[e.id,e]));
   for (const event of current.state.events) events.set(event.id,event);
   const merged = validateLearning({ ...current.state,
+    ...mergePendingRounds(current.state, data.learning),
     ...(includeSettings ? { plan: { ...data.learning.plan }, preferences: { ...data.learning.preferences } } : {}),
-    revision:current.state.revision+1, events:[...events.values()].sort((a,b)=>a.at-b.at || a.id.localeCompare(b.id)), favorites:[...new Set([...current.state.favorites,...data.learning.favorites])] });
-  const writes = [{ key:'dreamwhale:learning:v1', expected:current.raw, value:JSON.stringify(merged) }];
+    events:[...events.values()].sort((a,b)=>a.at-b.at || a.id.localeCompare(b.id)), favorites:[...new Set([...current.state.favorites,...data.learning.favorites])] });
+  const prepared = prepareLearningSave(merged, current.raw, storage);
+  const writes = [...prepared.writes];
   const add = (key,value) => writes.push({ key, expected:storage.getItem(key), value:JSON.stringify(value) });
   if (includeSettings) {
     if (data.voiceService) {
@@ -86,5 +89,6 @@ export function restoreBackup(data, { includeSettings = false, storage = appStor
     if (!loadUserProfile() && normalizeProfile(data.userProfile)) add('word-blade:user-profile',normalizeProfile(data.userProfile));
   }
   const count = importChatSessions(chats,writes);
-  return { chats:count, events:merged.events.length-current.state.events.length };
+  finishLearningSave(prepared, storage);
+  return { chats:count, events:merged.events.length-current.state.events.length, rounds:pendingRounds(merged).length-pendingRounds(current.state).length };
 }

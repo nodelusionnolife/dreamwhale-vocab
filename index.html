@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="ui-modern">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
@@ -566,6 +566,14 @@
   .filter-tabs .active { background:var(--accent); color:#fff; border-color:var(--accent); }
   .result-count { font-size:12px; color:var(--muted); margin-bottom:12px; }
   .library-list { margin-bottom:24px; }
+  .library-pagination { display:flex; align-items:end; justify-content:center; gap:10px; padding:12px 0; scroll-margin-top:16px; }
+  .library-pagination button { min-height:44px; padding:10px 12px; flex-shrink:0; }
+  .library-pagination .study-filter { margin:0; min-width:0; width:auto; }
+  .library-pagination select { min-height:44px; width:100%; }
+  .library-list { scroll-margin-top:90px; }
+  .pending-rounds { margin-bottom:24px; }
+  .pending-rounds > summary { cursor:pointer; font-weight:700; padding:10px 0; }
+  .pending-rounds .resume-card { margin-bottom:12px; }
   .library-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:14px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line); }
   .word-open { border:0; background:transparent; text-align:left; padding:8px 0; min-width:0; }
   .word-open strong { display:block; font-size:19px; margin-bottom:8px; overflow-wrap:anywhere; }
@@ -649,7 +657,7 @@
   html[data-layout="mobile"] .training-card { padding:16px 12px; }
   html[data-layout="mobile"] .training-card h2 { font-size:17px; }
   html[data-layout="mobile"] .training-type { font-size:9px; letter-spacing:.06em; }
-  html[data-layout="mobile"] .training-filters { gap:12px; }
+  html[data-layout="mobile"] .training-filters { gap:12px; flex-wrap:wrap; }
   html[data-layout="mobile"] .training-filters .study-filter { width:calc(50% - 6px); }
   html[data-layout="mobile"] .summary-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   html[data-layout="mobile"] .round-summary h1 { font-size:25px; }
@@ -732,6 +740,194 @@
   html[data-layout="mobile"] #btn-chat-stop { min-width:56px; padding:8px; }
   html[data-layout="mobile"] .scene-previews { gap:6px; }
 </style>
+<style data-ui="modern">
+  html.ui-modern {
+    color-scheme: light;
+    --bg-primary:#f4f6fb; --bg-secondary:#fff; --bg-tertiary:#edf0f8;
+    --surface:rgba(255,255,255,.95); --surface-hover:#e7ecf8;
+    --text-primary:#232b40; --text-secondary:#59657d; --text-tertiary:#68758b;
+    --accent-primary:#4f61ba; --accent-secondary:#667eea;
+    --accent-gradient:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+    --border-subtle:#dde3ef; --border-medium:#c6cfdf;
+    --success:#217952; --warning:#8d5e13; --error:#b83a47;
+    --accent-soft:#e9eafb; --success-soft:#e9f5ee; --warning-soft:#fff3df; --error-soft:#fff0f1;
+    --shadow-sm:0 2px 8px #27335908; --shadow-md:0 4px 16px #27335910; --shadow-lg:0 8px 32px #27335918;
+    --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:24px; --radius-full:9999px;
+    --transition-fast:150ms cubic-bezier(.4,0,.2,1); --transition-base:250ms cubic-bezier(.4,0,.2,1);
+    --bg:var(--bg-primary); --panel:var(--bg-secondary); --panel-2:var(--bg-tertiary);
+    --fg:var(--text-primary); --muted:var(--text-secondary); --accent:var(--accent-primary); --line:var(--border-subtle);
+    --ok:var(--success); --bad:var(--error); --warn:var(--warning); --tile:var(--bg-tertiary); --tile-sel:var(--accent-soft);
+    --env:#426b83; --action:#7954a0; --thought:#886125; --speech:#217952;
+  }
+  html.ui-modern[data-theme="dark"] {
+    color-scheme:dark;
+    --bg-primary:#0a0b0f; --bg-secondary:#12141a; --bg-tertiary:#1a1d28;
+    --surface:rgba(26,29,40,.95); --surface-hover:#252935;
+    --text-primary:#f0f3f8; --text-secondary:#a2acc0; --text-tertiary:#8b95a8;
+    --accent-primary:#89b9ff; --border-subtle:#2c3242; --border-medium:#46516a;
+    --success:#3dd68c; --warning:#ffb547; --error:#ff8b85;
+    --accent-soft:#272842; --success-soft:#142e25; --warning-soft:#30281c; --error-soft:#341e25;
+    --shadow-sm:0 2px 8px #0003; --shadow-md:0 4px 16px #0004; --shadow-lg:0 8px 32px #0005;
+    --env:#9bcae9; --action:#c4a2ed; --thought:#e7c28c; --speech:#8ee1b8;
+  }
+  html.ui-modern body {
+    background:linear-gradient(135deg,var(--bg-primary),var(--bg-tertiary) 60%,var(--bg-primary));
+    color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  html.ui-modern body > header {
+    min-height:64px; padding:12px 24px; gap:8px 20px; flex:none;
+    background:var(--surface); border-color:var(--line); box-shadow:var(--shadow-sm);
+    backdrop-filter:blur(20px) saturate(180%); -webkit-backdrop-filter:blur(20px) saturate(180%);
+  }
+  html.ui-modern .brand { display:flex; align-items:center; gap:8px; font-size:20px; font-weight:700; letter-spacing:-.02em; color:var(--fg); }
+  html.ui-modern .brand span { display:inline; margin:0; font-size:10px; font-weight:600; letter-spacing:.15em; color:var(--accent); }
+  html.ui-modern .main-nav { gap:4px; background:transparent; }
+  html.ui-modern .main-nav button { padding:10px 16px; border:1px solid transparent; border-radius:12px; color:var(--muted); background:transparent; font-weight:500; box-shadow:none; }
+  html.ui-modern .main-nav button.active { color:#fff; background:var(--accent-gradient); box-shadow:0 4px 12px #667eea35; }
+  html.ui-modern #hud-chat-group { padding:8px 12px; background:var(--panel-2); border:1px solid var(--line); border-radius:12px; font-size:11px; }
+  html.ui-modern #view-learn { padding-top:32px; }
+  html.ui-modern button { border-radius:12px; background:var(--panel-2); color:var(--fg); border-color:var(--line); transition:background var(--transition-fast),border-color var(--transition-fast),box-shadow var(--transition-base),transform var(--transition-fast); }
+  html.ui-modern button.primary, html.ui-modern .filter-tabs button.active { background:var(--accent-gradient); color:#fff; border-color:transparent; box-shadow:0 4px 12px #667eea24; }
+  html.ui-modern button.ghost, html.ui-modern button.text-button { background:transparent; }
+  html.ui-modern button.text-button { color:var(--accent); }
+  html.ui-modern button.secondary { background:var(--accent-soft); border-color:var(--line); color:var(--accent); }
+  html.ui-modern button:disabled { opacity:.5; transform:none; box-shadow:none; }
+  html.ui-modern :is(button,input,select,textarea,summary,a):focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+  html.ui-modern :is(input,select,textarea) { accent-color:var(--accent); }
+  html.ui-modern :is(.field input:not([type="checkbox"]):not([type="range"]),.field select,.field textarea,.answer-input,.word-search,.study-filter select,.session-search,.session-filter,#chat-input,.text-editor input,.text-editor textarea) {
+    background:var(--panel-2); color:var(--fg); border:1px solid var(--border-medium); border-radius:12px; transition:border-color var(--transition-fast),box-shadow var(--transition-fast);
+  }
+  html.ui-modern :is(input,textarea)::placeholder { color:var(--text-tertiary); opacity:1; }
+  html.ui-modern :is(input,select,textarea):focus { border-color:var(--accent); box-shadow:0 0 0 3px #667eea20; }
+  html.ui-modern .scene-hero { border-radius:24px; border-color:var(--line); box-shadow:var(--shadow-sm); }
+  html.ui-modern .surface, html.ui-modern .practice-card, html.ui-modern .resume-card { background:var(--surface); border-color:var(--line); border-radius:20px; box-shadow:var(--shadow-sm); }
+  html.ui-modern .plan-card { background:linear-gradient(135deg,var(--panel) 35%,var(--accent-soft)); }
+  html.ui-modern .surface h2 { font-weight:650; }
+  html.ui-modern .plan-number strong { font-weight:700; letter-spacing:-.03em; }
+  html.ui-modern .bank-picker { background:var(--surface); border-radius:16px; padding:18px; }
+  html.ui-modern .bank-picker .filter-tabs + .filter-tabs { margin-top:8px; }
+  html.ui-modern .week-day strong { background:var(--panel-2); }
+  html.ui-modern .week-day.studied strong { background:var(--accent-soft); color:var(--accent); }
+  html.ui-modern .week-day.today strong { outline-color:var(--accent); }
+  html.ui-modern progress { height:8px; background:var(--panel-2); border-radius:9999px; }
+  html.ui-modern progress::-webkit-progress-bar { background:var(--panel-2); }
+  html.ui-modern progress::-webkit-progress-value { background:var(--accent-gradient); border-radius:9999px; }
+  html.ui-modern progress::-moz-progress-bar { background:var(--accent-gradient); border-radius:9999px; }
+  html.ui-modern .route-card { border-radius:20px; background:var(--surface); border-color:var(--line); box-shadow:var(--shadow-sm); }
+  html.ui-modern .training-card { position:relative; overflow:hidden; border-radius:24px; padding:26px; transition:border-color var(--transition-fast),box-shadow var(--transition-base),transform var(--transition-base); }
+  html.ui-modern .training-card::before { content:""; position:absolute; top:0; left:0; right:0; height:3px; background:var(--accent-gradient); transform:scaleX(0); transform-origin:left; transition:transform var(--transition-base); }
+  html.ui-modern .training-type { color:var(--accent); }
+  html.ui-modern .library-row { border-color:var(--line); border-radius:12px; transition:background var(--transition-fast); }
+  html.ui-modern .word-open { background:transparent; border-radius:12px; }
+  html.ui-modern .word-open strong { color:var(--fg); }
+  html.ui-modern .word-status { color:var(--muted); }
+  html.ui-modern .word-detail { border-radius:24px; }
+  html.ui-modern .word-detail h2 { font-weight:700; letter-spacing:-.025em; }
+  html.ui-modern .word-example { padding:16px; margin:16px 0; border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:12px; background:var(--panel-2); }
+  html.ui-modern .practice-card { border-radius:24px; padding:32px; }
+  html.ui-modern .practice-card h2 { font-weight:650; }
+  html.ui-modern .pill { border:1px solid var(--border-medium); border-radius:9999px; padding:6px 12px; background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  html.ui-modern .answer-options { gap:12px; }
+  html.ui-modern .answer-option { background:var(--panel-2); border:2px solid var(--line); border-radius:14px; padding:16px; color:var(--fg); }
+  html.ui-modern .answer-option.selected { border-color:var(--accent); background:var(--accent-soft); color:var(--fg); box-shadow:0 0 0 3px #667eea18; }
+  html.ui-modern .answer-option.answer-correct { border-color:var(--ok); background:var(--success-soft); color:var(--ok); opacity:1; }
+  html.ui-modern .answer-feedback { padding:20px; border:1px solid var(--line); border-left:4px solid var(--warn); border-radius:16px; background:var(--warning-soft); color:var(--fg); }
+  html.ui-modern .answer-feedback.success { background:var(--success-soft); color:var(--ok); border-color:var(--ok); }
+  html.ui-modern .exercise-hint, html.ui-modern .hint-box, html.ui-modern .study-note, html.ui-modern .mistake-rules { border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:16px; background:var(--accent-soft); color:var(--fg); }
+  html.ui-modern .study-error { background:var(--error-soft); color:var(--bad); }
+  html.ui-modern .audio-play, html.ui-modern .speech-button { background:var(--panel-2); color:var(--accent); border-color:var(--line); border-radius:10px; }
+  html.ui-modern .speech-button[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); }
+  html.ui-modern #view-chat { gap:12px; padding:12px; }
+  html.ui-modern #session-side, html.ui-modern #chat-practice { background:var(--surface); border:1px solid var(--line); border-radius:20px; }
+  html.ui-modern .side-head { background:var(--surface); border-color:var(--line); }
+  html.ui-modern .side-item.active { background:var(--accent-soft); }
+  html.ui-modern .side-main { border-radius:0; background:transparent; }
+  html.ui-modern #chat-main { height:auto; border:1px solid var(--line); border-radius:24px; overflow:hidden; background-image:linear-gradient(#101521a6,#101521c2),var(--scene-current); }
+  html.ui-modern .chat-toolbar { background:var(--surface); border-color:var(--line); gap:8px; flex-wrap:wrap; }
+  html.ui-modern .chat-toolbar select { background:var(--panel-2); border-radius:10px; }
+  html.ui-modern #chat-thread { padding:24px 20px 12px; }
+  html.ui-modern .msg { width:fit-content; max-width:90%; margin-bottom:24px; }
+  html.ui-modern .msg.user { margin-left:auto; }
+  html.ui-modern .msg-who { font-size:12px; }
+  html.ui-modern .character-avatar { width:28px; height:28px; border-radius:50%; }
+  html.ui-modern .msg.assistant .msg-body { background:var(--surface); color:var(--fg); border:1px solid var(--line); border-radius:18px 18px 18px 4px; padding:14px 18px; box-shadow:var(--shadow-sm); backdrop-filter:blur(15px); }
+  html.ui-modern .msg.user .msg-body { background:var(--accent-gradient); color:#fff; border:1px solid transparent; border-radius:18px 18px 4px 18px; padding:14px 18px; box-shadow:0 4px 16px #667eea30; }
+  html.ui-modern .msg.user .msg-body :is(.seg-env,.seg-action,.seg-thought,.seg-speech) { color:inherit; }
+  html.ui-modern .msg.user .msg-body .speech-button { color:#fff; background:#ffffff18; border-color:#ffffff50; }
+  html.ui-modern .msg-del { position:static; opacity:1; display:flex; justify-content:flex-end; margin-top:4px; }
+  html.ui-modern .msg.user .msg-del { justify-content:flex-start; }
+  html.ui-modern .msg-del-btn { color:var(--muted); background:var(--surface); }
+  html.ui-modern .message-actions { flex-wrap:wrap; gap:4px; margin:6px 0 0; }
+  html.ui-modern .message-actions button { font-size:11px; min-height:34px; color:var(--muted); background:var(--surface); border-color:var(--line); border-radius:8px; padding:6px 10px; }
+  html.ui-modern .regen-bar.branch-ready { background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
+  html.ui-modern .qcard { background:var(--accent-soft); border:1px solid var(--line); border-left:3px solid var(--accent); color:var(--fg); border-radius:16px; }
+  html.ui-modern #chat-composer { background:var(--surface); border-color:var(--line); }
+  html.ui-modern #chat-input { border-radius:16px; }
+  html.ui-modern #btn-chat-send { border-radius:14px; }
+  html.ui-modern dialog { background:var(--surface); border-color:var(--border-medium); border-radius:24px; padding:28px; box-shadow:var(--shadow-lg); color:var(--fg); }
+  html.ui-modern dialog::backdrop { background:#0a0b0fb3; backdrop-filter:blur(8px); }
+  html.ui-modern .settings-tabs { background:var(--panel); top:-28px; }
+  html.ui-modern .settings-tabs button { background:transparent; }
+  html.ui-modern .settings-tabs button[aria-selected="true"] { background:var(--accent-soft); color:var(--accent); }
+  html.ui-modern .dialog-close { background:var(--panel); }
+  html.ui-modern .tour-card { background:var(--surface); border:1px solid var(--line); border-radius:24px; box-shadow:var(--shadow-lg); }
+  @media (hover:hover) and (pointer:fine) {
+    html.ui-modern button:not(:disabled):hover { border-color:var(--accent); box-shadow:var(--shadow-sm); }
+    html.ui-modern button.primary:not(:disabled):hover { box-shadow:0 8px 24px #667eea40; transform:translateY(-1px); }
+    html.ui-modern .main-nav button:not(.active):hover, html.ui-modern .library-row:hover { background:var(--panel-2); }
+    html.ui-modern .training-card:hover { border-color:var(--accent); box-shadow:var(--shadow-lg); transform:translateY(-3px); }
+    html.ui-modern .training-card:hover::before { transform:scaleX(1); }
+    html.ui-modern .route-card:hover { transform:translateY(-2px); }
+  }
+  html.ui-modern[data-side-panel="drawer"] #session-side { top:0; left:0; border-radius:0 20px 20px 0; }
+  html.ui-modern[data-practice-panel="drawer"] #chat-practice { border-radius:20px 0 0 20px; }
+  html.ui-modern[data-layout="mobile"] body > header { min-height:0; padding:calc(8px + var(--safe-area-inset-top,env(safe-area-inset-top))) max(12px,var(--safe-area-inset-right,env(safe-area-inset-right))) 8px max(12px,var(--safe-area-inset-left,env(safe-area-inset-left))); gap:6px 8px; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  html.ui-modern[data-layout="mobile"] .main-nav { background:var(--surface); border-color:var(--line); backdrop-filter:blur(20px); }
+  html.ui-modern[data-layout="mobile"] .main-nav button { padding:6px 3px; border-radius:12px; gap:4px; }
+  html.ui-modern[data-layout="mobile"] #view-learn { padding-top:20px; }
+  html.ui-modern[data-layout="mobile"] .scene-hero { border-radius:20px; }
+  html.ui-modern[data-layout="mobile"] .surface { padding:20px; }
+  html.ui-modern[data-layout="mobile"] .bank-picker { padding:14px; }
+  html.ui-modern[data-layout="mobile"] .training-card { padding:18px 14px; border-radius:18px; }
+  html.ui-modern[data-layout="mobile"] .practice-card { padding:20px; border-radius:20px; }
+  html.ui-modern[data-layout="mobile"] .answer-option { padding:14px; }
+  html.ui-modern[data-layout="mobile"] .answer-feedback { padding:16px; }
+  html.ui-modern[data-layout="mobile"] #view-chat { padding:0; gap:0; }
+  html.ui-modern[data-layout="mobile"] #chat-main { border-radius:0; border:0; }
+  html.ui-modern[data-layout="mobile"] #chat-thread { padding:16px max(12px,var(--safe-area-inset-right,env(safe-area-inset-right))) 8px max(12px,var(--safe-area-inset-left,env(safe-area-inset-left))); }
+  html.ui-modern[data-layout="mobile"] .msg { max-width:95%; }
+  html.ui-modern[data-layout="mobile"] .msg.assistant .msg-who { padding-right:0; min-height:28px; }
+  html.ui-modern[data-layout="mobile"] .msg.user .msg-who { margin-bottom:8px; }
+  html.ui-modern[data-layout="mobile"] .msg.assistant .msg-body, html.ui-modern[data-layout="mobile"] .msg.user .msg-body { padding:12px 14px; }
+  html.ui-modern[data-layout="mobile"] .message-actions button { min-height:44px; }
+  html.ui-modern[data-layout="mobile"] dialog { border-radius:24px 24px 0 0; padding:20px max(16px,var(--safe-area-inset-right,env(safe-area-inset-right))) calc(20px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom))) max(16px,var(--safe-area-inset-left,env(safe-area-inset-left))); }
+  html.ui-modern[data-layout="mobile"] .settings-tabs { top:-20px; }
+  html.ui-modern #settings {
+    width:min(680px,calc(100% - 32px)); max-width:680px;
+    height:min(720px,78dvh); max-height:calc(var(--visual-height,100dvh) - var(--safe-area-inset-top,env(safe-area-inset-top)) - var(--safe-area-inset-bottom,env(safe-area-inset-bottom)) - 32px);
+    margin:auto; padding:0; border-radius:24px; overflow:hidden;
+  }
+  html.ui-modern #settings[open] { display:flex; flex-direction:column; }
+  html.ui-modern #settings .settings-heading { display:flex; align-items:center; justify-content:space-between; flex:none; gap:16px; padding:16px 20px 8px; }
+  html.ui-modern #settings .settings-heading h2 { margin:0; font-size:20px; }
+  html.ui-modern #settings .dialog-close { position:static; float:none; min-width:44px; min-height:44px; background:transparent; }
+  html.ui-modern #settings > .settings-tabs { position:static; flex:none; margin:0; padding:4px 16px 12px; flex-wrap:wrap; overflow:visible; background:transparent; }
+  html.ui-modern #settings .settings-content { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:20px; scroll-padding:16px; }
+  html.ui-modern #settings .settings-actions { position:static; }
+  html.ui-modern #settings > .settings-actions { flex:none; margin:0; padding:12px 20px; border-top:1px solid var(--line); background:var(--panel); justify-content:flex-end; }
+  html.ui-modern[data-layout="mobile"] #settings { width:calc(100% - 24px); border-radius:20px; }
+  html.ui-modern[data-layout="mobile"] #settings .settings-content { padding:16px; }
+  html.ui-modern[data-layout="mobile"] #settings > .settings-tabs { padding:0 12px 10px; gap:4px; }
+  html.ui-modern[data-layout="mobile"] #settings > .settings-tabs button { flex:1 0 calc(25% - 4px); }
+  @media (max-width:380px) {
+    html.ui-modern[data-layout="mobile"] .training-grid { grid-template-columns:1fr; }
+    html.ui-modern .plan-start { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    html.ui-modern *, html.ui-modern *::before, html.ui-modern *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+  }
+</style>
 </head>
 <body>
   <header>
@@ -780,12 +976,15 @@
   <div id="chat-toast" class="hidden"></div>
 
   <!-- ============ 设置 ============ -->
-  <dialog id="settings">
-    <button id="btn-close-settings" class="dialog-close" aria-label="关闭设置">×</button>
-    <h2>设置</h2>
+  <dialog id="settings" aria-labelledby="settings-title">
+    <div class="settings-heading">
+      <h2 id="settings-title">设置</h2>
+      <button id="btn-close-settings" class="dialog-close" aria-label="关闭设置" autofocus>×</button>
+    </div>
     <div class="settings-tabs" role="tablist" aria-label="设置分类">
       <button role="tab" id="tab-general" aria-controls="settings-general" data-settings-tab="general">常用</button><button role="tab" id="tab-profile" aria-controls="settings-profile" data-settings-tab="profile">档案</button><button role="tab" id="tab-models" aria-controls="settings-models" data-settings-tab="models">模型</button><button role="tab" id="tab-voice" aria-controls="settings-voice" data-settings-tab="voice">语音服务</button><button role="tab" id="tab-companion" aria-controls="settings-companion" data-settings-tab="companion">陪学</button><button role="tab" id="tab-data" aria-controls="settings-data" data-settings-tab="data">数据</button><button role="tab" id="tab-advanced" aria-controls="settings-advanced" data-settings-tab="advanced">高级</button>
     </div>
+    <div class="settings-content">
     <section id="settings-profile" role="tabpanel" aria-labelledby="tab-profile" hidden>
       <h3>我的档案</h3>
       <p class="hint">梦鲸会按这里的称呼与你交流。保存后用于当前对话和之后的新对话。</p>
@@ -993,13 +1192,14 @@
     <div class="field"><label for="set-timeout">等待超时（秒）</label><input id="set-timeout" type="number" min="10" max="300" step="10" /></div>
     </section>
     <section id="settings-data" role="tabpanel" aria-labelledby="tab-data" hidden>
-      <h3>备份与恢复</h3><p class="hint">备份包含聊天、学习记录、收藏、陪学记忆和模型配置，不包含模型 Key。备份文件中可能含有你的私人对话，请妥善保管。</p>
+      <h3>备份与恢复</h3><p class="hint">备份包含聊天、学习记录、未完成练习与作答草稿、收藏、陪学记忆和模型配置，不包含模型 Key。备份文件中可能含有你的私人对话，请妥善保管。</p>
       <div class="actions"><button id="btn-backup" class="secondary">导出完整备份</button><button id="btn-pick-backup" class="ghost">选择备份文件</button></div>
       <div id="backup-preview" hidden><p id="backup-summary" class="hint"></p><div class="field"><label><input type="checkbox" id="backup-settings" /> 同时恢复外观、陪学偏好并合并模型配置</label></div><button id="btn-import-backup" class="primary">合并导入</button></div>
       <p id="backup-status" class="hint" role="status"></p>
       <p id="data-storage-hint" class="hint">聊天保存在当前浏览器。清理浏览器数据或换设备前，请先导出备份。回收站可在对话列表中打开。</p>
       <button id="btn-clear-save" class="ghost">清空聊天记录</button>
     </section>
+    </div>
     <div class="actions settings-actions">
       <button id="btn-save-settings" class="primary">保存</button>
     </div>

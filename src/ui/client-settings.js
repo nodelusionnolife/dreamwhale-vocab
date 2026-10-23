@@ -42,7 +42,7 @@ export function initClientSettings({ legacy, notify, isBusy, onModel, beforeRest
   }
   syncScene();
   const tabs=[...document.querySelectorAll('[data-settings-tab]')];
-  function showTab(key){for(const tab of tabs){const active=tab.dataset.settingsTab===key;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;$(tab.getAttribute('aria-controls')).hidden=!active;}}
+  function showTab(key){for(const tab of tabs){const active=tab.dataset.settingsTab===key;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;$(tab.getAttribute('aria-controls')).hidden=!active;}document.querySelector('#settings .settings-content').scrollTop=0;}
   tabs.forEach((tab,i)=>{tab.addEventListener('click',()=>showTab(tab.dataset.settingsTab));tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const at=event.key==='Home'?0:event.key==='End'?tabs.length-1:(i+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[at].click();tabs[at].focus();});});
   showTab('general');
   function readModel(){return modelEntry({id:selected,name:$('set-model-name').value,profile:{endpoint:$('endpoint').value.trim(),model:$('model').value.trim(),apiKey:$('apiKey').value.trim(),provider:$('set-provider').value,cacheMode:$('set-cache-mode').value,stream:$('set-stream').checked,temperature:$('set-temperature').value,timeoutMs:Number($('set-timeout').value)*1000,
@@ -65,6 +65,7 @@ export function initClientSettings({ legacy, notify, isBusy, onModel, beforeRest
   $('btn-backup').addEventListener('click', async () => {
     try {
       if (isBusy()) throw new Error('请等当前回复或评价结束。');
+      if (!beforeRestore()) return;
       const data = createBackup();
       const saved = await downloadFile(`梦鲸备份-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(data,null,2));
       $('backup-status').textContent = saved ? '备份已导出，请在保存位置确认文件。' : '已取消导出。';
@@ -73,10 +74,11 @@ export function initClientSettings({ legacy, notify, isBusy, onModel, beforeRest
   $('btn-pick-backup').addEventListener('click', async () => {
     backup = null; $('backup-preview').hidden = true;
     try {
-      const text = await pickTextFile();
+      const text = await pickTextFile(64 * 1024 * 1024);
       if (text === null) return;
       backup = parseBackup(text);
-      $('backup-summary').textContent = `包含 ${backup.chats.length} 段对话、${backup.learning.events.length} 次作答、${backup.learning.favorites.length} 个收藏、${backup.models.length} 个模型配置。相同记录不会重复计入，冲突对话会另存副本。`;
+      const rounds = backup.learning.pausedRounds.length + Number(backup.learning.round?.finishedAt === null);
+      $('backup-summary').textContent = `包含 ${backup.chats.length} 段对话、${backup.learning.events.length} 次作答、${rounds} 组未完成练习、${backup.learning.favorites.length} 个收藏、${backup.models.length} 个模型配置。相同记录不会重复计入，现有练习优先保留，冲突对话会另存副本。`;
       $('backup-preview').hidden = false; $('backup-status').textContent = '校验通过，可以导入。';
     } catch (error) { $('backup-status').textContent = '未导入：' + error.message; }
   });
@@ -88,7 +90,7 @@ export function initClientSettings({ legacy, notify, isBusy, onModel, beforeRest
       const result = restoreBackup(backup, { includeSettings: $('backup-settings').checked });
       await flushStorage();
       backup = null; $('backup-preview').hidden = true;
-      $('backup-status').textContent = `已导入 ${result.chats} 段对话、${result.events} 次作答。正在重新打开页面…`;
+      $('backup-status').textContent = `已导入 ${result.chats} 段对话、${result.events} 次作答、${result.rounds} 组未完成练习。正在重新打开页面…`;
       setTimeout(() => location.reload(), 900);
     } catch (error) { $('backup-status').textContent = '导入未完成：' + error.message; }
   });

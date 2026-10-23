@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LEARNING_QUESTIONS } from '../src/content/learning-bank.js';
 import { emptyLearning, validateLearning, recordOutcome, createQuestionInstance, DAY } from '../src/engine/learning.js';
-import { catalogOf, startRound, advanceRound, roundPending, studyOverview, resumeLegacyPractice } from '../src/engine/study.js';
+import { catalogOf, startRound, advanceRound, roundPending, pendingRounds, resumeRound, studyOverview, resumeLegacyPractice } from '../src/engine/study.js';
 import { exportLearning, importLearning, saveLearning, loadLearning } from '../src/storage/learning.js';
 import { resolveLayout, loadLayout, saveLayout } from '../src/ui/layout.js';
 
@@ -19,6 +19,7 @@ test('old learning data receives a plan without losing events or current questio
   const old = { version: 1, events: [], active: { practice: createQuestionInstance(LEARNING_QUESTIONS[0], { now }) }, favorites: [], preferences: {} };
   const valid = validateLearning(old);
   assert.equal(valid.plan.newGoal, 10);
+  assert.deepEqual(valid.pausedRounds, []);
   const resumed = resumeLegacyPractice(valid, now);
   assert.equal(resumed.round.items.length, 1);
   assert.equal(resumed.active.practice.id, old.active.practice.id);
@@ -33,7 +34,8 @@ test('new learning is a bounded snapshot with unique, previously unseen words', 
   assert.equal(state.round.items.length, 5);
   assert.equal(new Set(state.round.items.map((x) => x.question.targetWords[0])).size, 5);
   assert.ok(state.round.items.every((x) => x.question.targetWords[0] !== first.targetWords[0]));
-  assert.throws(() => startRound(LEARNING_QUESTIONS, state), /没有完成/);
+  const another = startRound(LEARNING_QUESTIONS, state);
+  assert.deepEqual(another.pausedRounds, [{ round: state.round, practice: state.active.practice }]);
   const db = storage(); saveLearning(state, null, db);
   assert.deepEqual(loadLearning(db).state.round, state.round);
   assert.deepEqual(loadLearning(db).state.active.practice.question.options, state.active.practice.question.options);
@@ -85,14 +87,94 @@ test('daily counts do not count repeated attempts, reveals twice, or skipped wor
 });
 
 test('record export excludes an unfinished round and import preserves local progress', () => {
-  const pending = startRound(LEARNING_QUESTIONS, emptyLearning(), { count: 5, now });
+  const first = startRound(LEARNING_QUESTIONS, emptyLearning(), { count: 5, now });
+  const pending = startRound(LEARNING_QUESTIONS, first, { kind: 'drill', count: 2, now });
   const exported = exportLearning(pending);
   assert.equal(JSON.parse(exported).round, null);
   assert.deepEqual(JSON.parse(exported).active, {});
+  assert.deepEqual(JSON.parse(exported).pausedRounds, []);
   const db = storage(); saveLearning(pending, null, db);
   importLearning(exported, db);
   assert.deepEqual(loadLearning(db).state.round, pending.round);
   assert.equal(loadLearning(db).state.active.practice.id, pending.active.practice.id);
+  assert.deepEqual(loadLearning(db).state.pausedRounds, pending.pausedRounds);
+});
+
+test('switching several unfinished rounds preserves drafts, feedback, choices and shared history after reload', () => {
+  let state = startRound(LEARNING_QUESTIONS, emptyLearning(), { count: 3, now });
+  state = advanceRound(finishCurrent(state), { now });
+  state.round.phase = 'answer';
+  state.active.practice = { ...state.active.practice, response: 'unfinished answer', tries: 2, hintLevel: 1, result: { status: 'incorrect', explanation: 'try again' } };
+  state.active['chat:test'] = createQuestionInstance(LEARNING_QUESTIONS[0]);
+  const first = structuredClone({ round: state.round, practice: state.active.practice });
+  state = startRound(LEARNING_QUESTIONS, state, { kind: 'drill', bank: 'cet6', frequency: 'high', count: 2, now });
+  const second = structuredClone({ round: state.round, practice: state.active.practice });
+  state = startRound(LEARNING_QUESTIONS, state, { kind: 'drill', type: 'fill', count: 2, now });
+  const thirdId = state.round.id;
+  state = finishCurrent(state);
+  const db = storage(); saveLearning(state, null, db);
+  state = loadLearning(db).state;
+  const events = structuredClone(state.events);
+  const chat = structuredClone(state.active['chat:test']);
+  state = resumeRound(state, first.round.id);
+  assert.deepEqual({ round: state.round, practice: state.active.practice }, first);
+  state = resumeRound(state, second.round.id);
+  assert.deepEqual({ round: state.round, practice: state.active.practice }, second);
+  state = resumeRound(state, thirdId);
+  assert.equal(state.active.practice.status, 'correct');
+  assert.deepEqual(state.events, events);
+  assert.deepEqual(state.active['chat:test'], chat);
+  assert.equal(pendingRounds(state).length, 3);
+  assert.equal(new Set(pendingRounds(state).map(entry => entry.round.id)).size, 3);
+  assert.doesNotThrow(() => validateLearning(state));
+});
+
+test('ending or completing one round leaves other rounds resumable without grading them', () => {
+  const first = startRound(LEARNING_QUESTIONS, emptyLearning(), { count: 2, now });
+  let state = startRound(LEARNING_QUESTIONS, first, { kind: 'drill', count: 1, now });
+  const secondId = state.round.id;
+  state = resumeRound(state, first.round.id);
+  state = advanceRound(state, { end: true, now });
+  assert.equal(state.events.length, 1);
+  assert.equal(pendingRounds(state).length, 1);
+  assert.equal(pendingRounds(state)[0].round.id, secondId);
+  state = resumeRound(state, secondId);
+  state = advanceRound(finishCurrent(state), { now });
+  assert.equal(pendingRounds(state).length, 0);
+  assert.equal(state.events.length, 2);
+  assert.doesNotThrow(() => validateLearning(state));
+});
+
+test('failed starts, stale resumes and failed writes keep the saved rounds intact', () => {
+  const first = startRound(LEARNING_QUESTIONS, emptyLearning(), { count: 2, now });
+  const db = storage(); const saved = saveLearning(first, null, db);
+  assert.throws(() => startRound(LEARNING_QUESTIONS, first, { topic: 'missing' }), /没有可练习/);
+  assert.throws(() => resumeRound(first, 'missing'), /已结束/);
+  assert.equal(loadLearning(db).raw, saved.raw);
+  const second = startRound(LEARNING_QUESTIONS, first, { kind: 'drill', count: 1, now });
+  assert.throws(() => saveLearning(second, saved.raw, { ...db, setItem: () => { throw Error('full'); } }), /full/);
+  assert.equal(loadLearning(db).raw, saved.raw);
+  assert.throws(() => advanceRound(second, { expectedId: first.active.practice.id }), /另一页面/);
+});
+
+test('damaged or duplicate paused rounds cannot overwrite a good save', () => {
+  const first = startRound(LEARNING_QUESTIONS, emptyLearning(), { count: 2, now });
+  const state = startRound(LEARNING_QUESTIONS, first, { kind: 'drill', count: 1, now });
+  const db = storage(); const saved = saveLearning(state, null, db);
+  for (const breakIt of [
+    s => { s.pausedRounds = null; },
+    s => { s.pausedRounds[0].round.index = 2; },
+    s => { s.pausedRounds[0].practice.id = 'other'; },
+    s => { s.pausedRounds[0].practice.response = {}; },
+    s => { s.pausedRounds[0].practice.result = { status: 'unknown' }; },
+    s => { s.pausedRounds[0].round.items[0].question.options = [42]; },
+    s => { s.pausedRounds.push(structuredClone(s.pausedRounds[0])); },
+    s => { s.pausedRounds.push({ round: s.round, practice: s.active.practice }); },
+  ]) {
+    const broken = structuredClone(state); breakIt(broken);
+    assert.throws(() => saveLearning(broken, saved.raw, db));
+    assert.equal(loadLearning(db).raw, saved.raw);
+  }
 });
 
 test('same-day due review counts as review without counting the new word twice', () => {
@@ -131,7 +213,7 @@ test('broken groups are rejected before they can overwrite a good record', () =>
 });
 
 test('catalog and grouped drills include phrases without duplicating variants', () => {
-  assert.equal(catalogOf(LEARNING_QUESTIONS.filter(q => !/^dw-c[46]-/.test(q.id))).length, 503);
+  assert.equal(catalogOf(LEARNING_QUESTIONS.filter(q => !/^dw-c[46]-/.test(q.id) && q.source !== 'project-original-pairs-2026')).length, 503);
   const state = startRound(LEARNING_QUESTIONS, emptyLearning(), { kind: 'drill', type: 'collocation', now });
   assert.equal(state.round.items.length, 10);
   assert.ok(state.round.items.every((item) => item.question.type === 'collocation'));
