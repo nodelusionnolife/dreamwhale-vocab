@@ -48,9 +48,9 @@ node serve.mjs
 
 | 平台 | 下载 |
 |---|---|
-| Android 7.0 及以上 | [Android APK](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2-android.apk) |
-| Windows x64 | [Windows 安装程序](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2-windows-x64-setup.exe) |
-| 网页与源码 | [单文件 HTML](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2.html) · [源码 ZIP](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2-source.zip) |
+| Android 7.0 及以上 | [Android APK](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.3/dreamwhale-vocab-0.15.3-android.apk) |
+| Windows x64 | [Windows 安装程序](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.3/dreamwhale-vocab-0.15.3-windows-x64-setup.exe) |
+| 网页与源码 | [单文件 HTML](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.3/dreamwhale-vocab-0.15.3.html) · [源码 ZIP](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.3/dreamwhale-vocab-0.15.3-source.zip) |
 
 - **Windows x64**：新安装默认目录为 `%LOCALAPPDATA%\Programs\Dreamwhale`。显示名称仍为「梦鲸词汇」，安装时可以更改目录；已有安装升级时沿用原目录。
 - **Android**：最低 Android 7.0，需要较新的系统 WebView。项目生成的 APK 使用本机构建环境的测试签名。
@@ -84,7 +84,7 @@ node serve.mjs
 客观题由本地规则判分；情境表达可调用模型评价，也可离线对照范例，对照练习不算独立答对。网络失败或模型无法判断时，不会直接记为答错。网页版直连模型端点，需要服务端允许浏览器跨域访问。
 
 - **学习朗读**：单词、例句、题干、答案与听写使用系统声音，支持英美音和 0.50–1.50 倍语速。离线能力取决于设备已安装的英语语音。
-- **梦鲸语音**：可使用系统声音，或单独配置阿里百炼、MiniMax。支持段落、整条消息和回复完成后自动朗读，在线 TTS 仅用于梦鲸交流。
+- **梦鲸语音**：可使用系统声音，或单独配置阿里百炼、MiniMax。支持整条消息朗读；启用在线语音自动朗读后，回复按句合成，并随播放进度逐字显示。在线 TTS 仅用于梦鲸交流。
 
 在线模型和语音服务使用各自的 Key，费用由所选服务商收取。具体配置见 [应用说明](APP.md)。
 

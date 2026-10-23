@@ -848,19 +848,26 @@
   html.ui-modern .chat-toolbar { background:var(--surface); border-color:var(--line); gap:8px; flex-wrap:wrap; }
   html.ui-modern .chat-toolbar select { background:var(--panel-2); border-radius:10px; }
   html.ui-modern #chat-thread { padding:24px 20px 12px; }
-  html.ui-modern .msg { width:fit-content; max-width:90%; margin-bottom:24px; }
+  html.ui-modern .msg { width:fit-content; max-width:min(76%,600px); margin-bottom:24px; }
   html.ui-modern .msg.user { margin-left:auto; }
-  html.ui-modern .msg-who { font-size:12px; }
+  html.ui-modern .msg-who { display:flex; width:fit-content; font-size:12px; }
+  html.ui-modern .msg.user .msg-who { margin-left:auto; }
+  html.ui-modern .msg-body { display:block; width:fit-content; max-width:100%; }
+  html.ui-modern .msg.user .msg-body { margin-left:auto; }
   html.ui-modern .character-avatar { width:28px; height:28px; border-radius:50%; }
   html.ui-modern .msg.assistant .msg-body { background:var(--surface); color:var(--fg); border:1px solid var(--line); border-radius:18px 18px 18px 4px; padding:14px 18px; box-shadow:var(--shadow-sm); backdrop-filter:blur(15px); }
   html.ui-modern .msg.user .msg-body { background:var(--accent-gradient); color:#fff; border:1px solid transparent; border-radius:18px 18px 4px 18px; padding:14px 18px; box-shadow:0 4px 16px #667eea30; }
   html.ui-modern .msg.user .msg-body :is(.seg-env,.seg-action,.seg-thought,.seg-speech) { color:inherit; }
   html.ui-modern .msg.user .msg-body .speech-button { color:#fff; background:#ffffff18; border-color:#ffffff50; }
-  html.ui-modern .msg-del { position:static; opacity:1; display:flex; justify-content:flex-end; margin-top:4px; }
-  html.ui-modern .msg.user .msg-del { justify-content:flex-start; }
-  html.ui-modern .msg-del-btn { color:var(--muted); background:var(--surface); }
-  html.ui-modern .message-actions { flex-wrap:wrap; gap:4px; margin:6px 0 0; }
-  html.ui-modern .message-actions button { font-size:11px; min-height:34px; color:var(--muted); background:var(--surface); border-color:var(--line); border-radius:8px; padding:6px 10px; }
+  html.ui-modern .message-actions { position:relative; display:flex; align-items:center; flex-wrap:nowrap; width:max-content; max-width:100%; gap:2px; margin:4px 0 0; }
+  html.ui-modern .msg.user .message-actions { margin-left:auto; }
+  html.ui-modern .message-actions .message-action { display:inline-flex; align-items:center; justify-content:center; flex:none; width:32px; height:32px; min-height:32px; padding:0; margin:0; color:#c5cbd6; background:transparent; border:1px solid transparent; border-radius:8px; box-shadow:none; }
+  html.ui-modern .message-actions .message-action:hover, html.ui-modern .message-actions .message-action:focus-visible { color:#fff; background:#ffffff1c; border-color:#ffffff45; }
+  html.ui-modern .message-actions .message-action:disabled { opacity:.35; }
+  html.ui-modern .message-actions .message-action svg { flex:none; }
+  html.ui-modern .message-actions .msg-del { position:static; display:flex; opacity:1; margin:0; width:32px; height:32px; }
+  html.ui-modern .message-actions .msg-del-confirm { position:absolute; right:0; top:0; z-index:2; min-height:32px; background:var(--panel); box-shadow:var(--shadow-sm); }
+  html.ui-modern .message-actions .msg-del-confirm button { min-height:28px; }
   html.ui-modern .regen-bar.branch-ready { background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
   html.ui-modern .qcard { background:var(--accent-soft); border:1px solid var(--line); border-left:3px solid var(--accent); color:var(--fg); border-radius:16px; }
   html.ui-modern #chat-composer { background:var(--surface); border-color:var(--line); }
@@ -897,11 +904,12 @@
   html.ui-modern[data-layout="mobile"] #view-chat { padding:0; gap:0; }
   html.ui-modern[data-layout="mobile"] #chat-main { border-radius:0; border:0; }
   html.ui-modern[data-layout="mobile"] #chat-thread { padding:16px max(12px,var(--safe-area-inset-right,env(safe-area-inset-right))) 8px max(12px,var(--safe-area-inset-left,env(safe-area-inset-left))); }
-  html.ui-modern[data-layout="mobile"] .msg { max-width:95%; }
+  html.ui-modern[data-layout="mobile"] .msg { max-width:88%; }
   html.ui-modern[data-layout="mobile"] .msg.assistant .msg-who { padding-right:0; min-height:28px; }
   html.ui-modern[data-layout="mobile"] .msg.user .msg-who { margin-bottom:8px; }
   html.ui-modern[data-layout="mobile"] .msg.assistant .msg-body, html.ui-modern[data-layout="mobile"] .msg.user .msg-body { padding:12px 14px; }
-  html.ui-modern[data-layout="mobile"] .message-actions button { min-height:44px; }
+  html.ui-modern[data-layout="mobile"] .message-actions .message-action, html.ui-modern[data-layout="mobile"] .message-actions .msg-del { width:40px; height:44px; min-height:44px; }
+  html.ui-modern[data-layout="mobile"] .message-actions .msg-del-confirm { min-height:44px; }
   html.ui-modern[data-layout="mobile"] dialog { border-radius:24px 24px 0 0; padding:20px max(16px,var(--safe-area-inset-right,env(safe-area-inset-right))) calc(20px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom))) max(16px,var(--safe-area-inset-left,env(safe-area-inset-left))); }
   html.ui-modern[data-layout="mobile"] .settings-tabs { top:-20px; }
   html.ui-modern #settings {
@@ -1014,7 +1022,7 @@
         <div class="field"><label for="voice-accent">聊天英语口音</label><select id="voice-accent"><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></div>
         <div class="field"><label for="voice-rate">聊天语速 · <output id="voice-rate-label" for="voice-rate">0.85×</output></label><input id="voice-rate" type="range" min="0.5" max="1.5" step="0.05" value="0.85" /></div>
       </fieldset>
-      <div class="field"><label><input id="voice-auto-read" type="checkbox" /> 梦鲸回复完成后自动朗读</label></div>
+      <div class="field"><label><input id="voice-auto-read" type="checkbox" /> 自动朗读回复（在线语音边显示边朗读）</label></div>
       <p id="voice-storage-hint" class="hint"></p>
       <p class="hint">服务配置修改后需保存。试听会保存并调用所选服务，在线合成可能产生费用。系统语音目前朗读英文，在线服务支持中英文。</p>
       <div class="actions"><button id="voice-save" type="button">保存语音服务</button></div>
@@ -1461,7 +1469,7 @@ async function synthesizeCloudSpeech(service, segment, rate, { fetchImpl, signal
   } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); }
 }
 
-function playSpeechAudio(blob, signal) {
+function playSpeechAudio(blob, signal, { onProgress } = {}) {
   signal.throwIfAborted();
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
@@ -1469,14 +1477,17 @@ function playSpeechAudio(blob, signal) {
     let finished = false;
     const finish = error => {
       if (finished) return; finished = true;
-      clearTimeout(timer); signal.removeEventListener('abort', stop);
+      clearTimeout(timer); clearInterval(progressTimer); signal.removeEventListener('abort', stop);
       audio.onended = audio.onerror = null; audio.pause(); audio.removeAttribute('src'); URL.revokeObjectURL(url);
       error ? reject(error) : resolve();
     };
     const stop = () => finish(new DOMException('已停止朗读', 'AbortError'));
     const timer = setTimeout(() => finish(new Error('音频播放超时，请重试。')), 180000);
+    const progressTimer = onProgress ? setInterval(() => {
+      if (!finished && Number.isFinite(audio.duration) && audio.duration > 0) onProgress(Math.min(1, audio.currentTime / audio.duration));
+    }, 40) : null;
     signal.addEventListener('abort', stop, { once: true });
-    audio.onended = () => finish(); audio.onerror = () => finish(new Error('无法播放语音音频，请重试。'));
+    audio.onended = () => { onProgress?.(1); finish(); }; audio.onerror = () => finish(new Error('无法播放语音音频，请重试。'));
     audio.play().catch(() => finish(new Error('播放未获允许，请点击朗读按钮再试。')));
   });
 }
@@ -1484,13 +1495,106 @@ function playSpeechAudio(blob, signal) {
     exports.playSpeechAudio = playSpeechAudio;
   });
 
+  __def("src/engine/reply-narration.js", function (module, exports, __req) {
+    const { chatSpeechText } = __req("src/engine/voice-service.js");
+/* import ./voice-service.js */
+
+function visibleReply(raw) {
+  return String(raw || '')
+    .replace(/<(TurnSummary|AnswerKey|TeachingReference|Face|Sticker)>[\s\S]*?(?:<\/\1>|$)/gi, '')
+    .replace(/<Question>[\s\S]*?(?:<\/Question>|$)/gi, part => /<\/Question>$/i.test(part) ? part : '')
+    .replace(/<[^>]*$/, '');
+}
+
+function nextChunk(text, final) {
+  if (!text) return '';
+  const question = text.search(/<Question>/i);
+  if (question === 0) return text.slice(0, text.search(/<\/Question>/i) + 11);
+  const plain = question > 0 ? text.slice(0, question) : text;
+  const boundary = /[。！？；\n]|[.!?;](?=\s|$)/u.exec(plain);
+  if (boundary) return plain.slice(0, boundary.index + boundary[0].length);
+  if (plain.length >= 160) {
+    const prefix = [...plain].slice(0, 120).join('');
+    const space = prefix.lastIndexOf(' ');
+    return prefix.slice(0, space > 60 ? space + 1 : prefix.length);
+  }
+  return final || question > 0 ? plain : '';
+}
+
+function createReplyNarration({ prepare, play, signal, onText, onDone, onError, onCancel }) {
+  let visible = '', consumed = 0, completed = '', displayed = '';
+  let running = false, ended = false, stopped = false, notified = false;
+  const queue = [];
+  const emit = text => { if (displayed !== text) { displayed = text; onText?.(text); } };
+  const done = () => {
+    if (notified) return;
+    notified = true; signal.removeEventListener('abort', stop); onDone?.();
+  };
+  function stop() {
+    if (stopped) return;
+    stopped = true; queue.length = 0; emit(visible); done(); onCancel?.();
+  }
+  function warm() {
+    for (const item of queue.slice(0, 2)) {
+      if (!item.ready) item.ready = item.speech
+        ? Promise.resolve().then(() => { signal.throwIfAborted(); return prepare(item.speech); }).then(value => ({ value }), error => ({ error }))
+        : Promise.resolve({ value: null });
+    }
+  }
+  async function drain() {
+    if (running || stopped) return;
+    running = true;
+    try {
+      while (queue.length && !stopped) {
+        warm();
+        const item = queue[0], result = await item.ready;
+        if (stopped || signal.aborted) return;
+        if (result.error) throw result.error;
+        const chars = [...item.display];
+        if (result.value !== null) await play(result.value, fraction => {
+          if (stopped || signal.aborted) return;
+          const count = Math.max(item.revealed || 0, Math.min(chars.length, Math.floor(fraction * chars.length)));
+          item.revealed = count;
+          emit(completed + chars.slice(0, count).join(''));
+        });
+        if (stopped || signal.aborted) return;
+        completed += item.display; emit(completed); queue.shift();
+      }
+      if (ended && !stopped) { emit(visible); done(); }
+    } catch (error) {
+      if (!stopped && !signal.aborted) { stop(); onError?.(error); }
+    } finally { running = false; }
+  }
+  function push(raw, final = false) {
+    const next = visibleReply(raw);
+    if (!next.startsWith(visible) && !stopped) stop();
+    visible = next;
+    if (final) ended = true;
+    if (stopped) { emit(visible); return; }
+    let chunk;
+    while ((chunk = nextChunk(visible.slice(consumed), final))) {
+      consumed += chunk.length;
+      queue.push({ display: chunk, speech: chatSpeechText(chunk) });
+    }
+    warm(); void drain();
+  }
+  signal.addEventListener('abort', stop, { once: true });
+  if (signal.aborted) stop();
+  return { push, finish: raw => push(raw, true) };
+}
+    exports.visibleReply = visibleReply;
+    exports.createReplyNarration = createReplyNarration;
+  });
+
   __def("src/platform/runtime.js", function (module, exports, __req) {
     const { normalizeSpeechOptions, selectSpeechVoice, missingVoiceMessage, splitSpeechText, englishText } = __req("src/engine/speech.js");
     const { normalizeVoiceService, validateVoiceService, voiceSegments, VOICE_PROVIDERS } = __req("src/engine/voice-service.js");
     const { synthesizeCloudSpeech, playSpeechAudio } = __req("src/platform/cloud-speech.js");
+    const { createReplyNarration } = __req("src/engine/reply-narration.js");
 /* import ../engine/speech.js */
 /* import ../engine/voice-service.js */
 /* import ./cloud-speech.js */
+/* import ../engine/reply-narration.js */
 
 function nativeRuntime() { return globalThis.__dreamwhaleNative || null; }
 function appStorage() { return nativeRuntime()?.storage || globalThis.localStorage; }
@@ -1587,6 +1691,56 @@ async function speakSystemText(text, options, run, onVoice) {
     });
   }
 }
+function narrateReply(serviceRaw, { onText, onDone, onError, onNotice } = {}) {
+  const stopping = Promise.resolve(stopSpeech());
+  const run = speechRun;
+  const controller = new AbortController(); cloudController = controller;
+  const service = normalizeVoiceService(serviceRaw);
+  const signal = controller.signal;
+  let fallbackNotice = false;
+  const narration = createReplyNarration({
+    signal, onText, onCancel() {
+      controller.abort();
+      if (run === speechRun) Promise.resolve(stopSpeech()).catch(onError);
+    },
+    async prepare(text) {
+      await stopping; signal.throwIfAborted();
+      const segments = voiceSegments(text, service.speechAccent);
+      const clips = [];
+      try {
+        for (const segment of segments) {
+          validateVoiceService(service, segment.language);
+          const blob = await synthesizeCloudSpeech(service, segment, service.speechRate, { fetchImpl: appFetch, signal });
+          clips.push({ blob, weight: [...segment.text].length });
+        }
+      } catch (error) {
+        if (signal.aborted || !service.fallback) throw error;
+        const fallbackText = englishText(text);
+        if (!fallbackText) throw error;
+        if (!fallbackNotice) { fallbackNotice = true; onNotice?.(`${error.message} 正在尝试系统英文朗读。`); }
+        return [{ fallbackText, weight: [...fallbackText].length }];
+      }
+      return clips;
+    },
+    async play(clips, progress) {
+      const total = clips.reduce((sum, clip) => sum + clip.weight, 0);
+      let played = 0;
+      for (const clip of clips) {
+        signal.throwIfAborted();
+        if (clip.fallbackText) {
+          await speakSystemText(clip.fallbackText, normalizeSpeechOptions(service), run);
+          signal.throwIfAborted();
+          progress((played + clip.weight) / total);
+        } else await playSpeechAudio(clip.blob, signal, { onProgress: fraction => progress((played + fraction * clip.weight) / total) });
+        played += clip.weight;
+      }
+    },
+    onDone() { if (cloudController === controller) cloudController = null; onDone?.(); },
+    onError(error) { controller.abort(); onError?.(error); },
+  });
+  stopping.catch(error => { controller.abort(); onError?.(error); });
+  return { ...narration, stop: () => controller.abort() };
+}
 async function saveTextFile(name, content, type = 'application/json') {
   if (nativeRuntime()?.saveFile) return nativeRuntime().saveFile(name, content, type);
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -1625,6 +1779,7 @@ async function copyText(text) {
     exports.listSpeechVoices = listSpeechVoices;
     exports.prepareSpeech = prepareSpeech;
     exports.speakText = speakText;
+    exports.narrateReply = narrateReply;
     exports.saveTextFile = saveTextFile;
     exports.pickTextFile = pickTextFile;
     exports.copyText = copyText;
@@ -16163,7 +16318,7 @@ const FORMAT_RULES = `【输出格式：四类标记】
 正文中的每一句话都必须属于下面四类之一，并用对应标记包住；末尾的回合小总结使用独立标签：
 
 - 环境变化、描写 → 用 [] 包裹。例：[突然下雨了]　[时钟不知不觉转到了五点]
-- 人物动作 → 用 () 包裹。例：(梦鲸摸了摸你的额头)
+- 人物动作 → 用 () 包裹。例：(梦鲸摸了摸你的额头)。以自身为主体的动作描写不需要第一人称的主语。
 - 心理描写 → 用【】包裹。例：【他是不是喜欢我哇】
 - 说话 → 用 “” 包裹。例：“你有什么想去的地方嘛？”
 
@@ -17273,24 +17428,56 @@ function saveVoiceService(value, storage = appStorage()) {
     exports.saveVoiceService = saveVoiceService;
   });
 
+  __def("src/ui/icons.js", function (module, exports, __req) {
+const paths = {
+  copy: ['M9 9h11v11H9z', 'M15 9V4H4v11h5'],
+  edit: ['m15 5 4 4', 'M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z'],
+  regenerate: ['M20 7v5h-5', 'M4 17v-5h5', 'M6 7a7 7 0 0 1 12-2l2 3', 'M18 17a7 7 0 0 1-12 2l-2-3'],
+  branch: ['M6 4v12a4 4 0 0 0 8 0v-5a4 4 0 0 1 4-4h2', 'm17 4 3 3-3 3'],
+  volume: ['M4 9h4l5-4v14l-5-4H4z', 'M17 8a6 6 0 0 1 0 8', 'M20 5a10 10 0 0 1 0 14'],
+  stop: ['M6 6h12v12H6z'],
+  delete: ['M3 6h18', 'M9 6V3h6v3', 'm5 6 1 15h12l1-15', 'M10 10v7', 'M14 10v7'],
+};
+
+function actionIcon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', width: '18', height: '18', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false' })) svg.setAttribute(key, value);
+  for (const d of paths[name] || []) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d); svg.appendChild(path);
+  }
+  return svg;
+}
+    exports.actionIcon = actionIcon;
+  });
+
   __def("src/ui/speech.js", function (module, exports, __req) {
-    const { speakText, stopSpeech, prepareSpeech, nativeRuntime, flushStorage } = __req("src/platform/runtime.js");
+    const { speakText, stopSpeech, prepareSpeech, nativeRuntime, flushStorage, narrateReply } = __req("src/platform/runtime.js");
     const { englishText, speechAccentMatches, speechVoiceStatus } = __req("src/engine/speech.js");
     const { loadPreferences } = __req("src/storage/client.js");
     const { loadVoiceService, saveVoiceService } = __req("src/storage/voice-service.js");
     const { speechText, chatSpeechText, normalizeVoiceService } = __req("src/engine/voice-service.js");
+    const { actionIcon } = __req("src/ui/icons.js");
 /* import ../platform/runtime.js */
 /* import ../engine/speech.js */
 /* import ../storage/client.js */
 /* import ../storage/voice-service.js */
 /* import ../engine/voice-service.js */
+/* import ./icons.js */
 
 let active = null;
 let sequence = 0;
 let notice;
 function resetButton() {
   const stop = document.getElementById('btn-stop-reading'); if (stop) stop.disabled = true;
-  if (active) { active.textContent = active.dataset.speechLabel; active.setAttribute('aria-label', active.dataset.speechAria); active.setAttribute('aria-pressed', 'false'); active = null; }
+  if (active) { setReadingControl(active, false); active = null; }
+}
+function setReadingControl(control, playing) {
+  if (control.dataset.speechIcon === 'true') control.replaceChildren(actionIcon(playing ? 'stop' : 'volume'));
+  else control.textContent = playing ? '■ 停止' : control.dataset.speechLabel;
+  control.setAttribute('aria-label', playing ? '停止朗读' : control.dataset.speechAria);
+  control.setAttribute('aria-pressed', String(playing));
+  control.title = playing ? '停止朗读' : control.dataset.speechAria;
 }
 function stopReading() {
   sequence++; resetButton();
@@ -17307,7 +17494,7 @@ async function readAloud(raw, control, { full = false, scope = 'learning', servi
   if (!text) return;
   const request = ++sequence; resetButton(); if (notice) notice.hidden = true;
   const stop = document.getElementById('btn-stop-reading'); if (stop) stop.disabled = false;
-  if (control) { active = control; control.textContent = '■ 停止'; control.setAttribute('aria-label', '停止朗读'); control.setAttribute('aria-pressed', 'true'); }
+  if (control) { active = control; setReadingControl(control, true); }
   try {
     const service = scope === 'chat' ? normalizeVoiceService(override || loadVoiceService()) : undefined;
     const preferences = service ? { speechAccent: service.speechAccent, speechRate: service.speechRate, speechOffline: false } : loadPreferences();
@@ -17323,6 +17510,7 @@ function speechButton(text, label = '朗读', accessible = label, options = {}) 
   const button = document.createElement('button'); button.type = 'button'; button.className = 'speech-button';
   button.textContent = `▶ ${label}`; button.dataset.speechLabel = button.textContent;
   button.dataset.speechAria = accessible; button.setAttribute('aria-label', accessible); button.setAttribute('aria-pressed', 'false');
+  if (options.icon) { button.dataset.speechIcon = 'true'; button.className += ' message-action'; setReadingControl(button, false); }
   button.addEventListener('click', event => { event.stopPropagation(); return readAloud(typeof text === 'function' ? text() : text, button, options); });
   return button;
 }
@@ -17334,6 +17522,19 @@ function autoReadReply(text) {
     if (document.hidden || !document.body.classList.contains('chat-mode') || document.getElementById('settings')?.open || !loadVoiceService().autoRead) return;
     return readAloud(text, null, { full: true, scope: 'chat' });
   } catch (error) { showError(error); }
+}
+function beginReplyReading({ onText, onDone }) {
+  const service = loadVoiceService();
+  if (!service.autoRead || service.provider === 'system' || document.hidden || !document.body.classList.contains('chat-mode') || document.getElementById('settings')?.open) return null;
+  const request = ++sequence;
+  resetButton();
+  const stop = document.getElementById('btn-stop-reading'); if (stop) stop.disabled = false;
+  return narrateReply(service, {
+    onText,
+    onDone() { if (request === sequence) resetButton(); onDone?.(); },
+    onError(error) { if (request === sequence) showError(error); },
+    onNotice(message) { if (request === sequence) showError(message); },
+  });
 }
 function initSpeechSettings({ getPreferences, save, notify }) {
   const $ = id => document.getElementById(id);
@@ -17386,7 +17587,7 @@ function initSpeechSettings({ getPreferences, save, notify }) {
   async function persist() {
     const request = saveService(); await flushStorage(); return request;
   }
-  $('voice-provider').addEventListener('change', () => { capture(); provider = $('voice-provider').value; fill(); });
+  $('voice-provider').addEventListener('change', () => { capture(); provider = $('voice-provider').value; if (provider !== 'system') draft.autoRead = true; fill(); });
   $('voice-rate').addEventListener('input', () => { $('voice-rate-label').textContent = `${Number($('voice-rate').value).toFixed(2)}×`; });
   $('voice-show-key').addEventListener('change', () => { $('voice-api-key').type = $('voice-show-key').checked ? 'text' : 'password'; });
   $('voice-save').addEventListener('click', async () => {
@@ -17435,6 +17636,7 @@ function initSelectionSpeech() {
     exports.speechButton = speechButton;
     exports.appendSpeech = appendSpeech;
     exports.autoReadReply = autoReadReply;
+    exports.beginReplyReading = beginReplyReading;
     exports.initSpeechSettings = initSpeechSettings;
     exports.initSelectionSpeech = initSelectionSpeech;
   });
@@ -17447,6 +17649,7 @@ function initSelectionSpeech() {
     const { stripTurnSummary } = __req("src/engine/summary.js");
     const { filterSessions } = __req("src/engine/client.js");
     const { appendSpeech, speechButton } = __req("src/ui/speech.js");
+    const { actionIcon } = __req("src/ui/icons.js");
 // 对话模式渲染。所有模型输出都用 DOM 节点构建，绝不用 innerHTML 注入文本。
 //
 // 角色回复的呈现顺序会被保留：叙述片段按四类标记套样式，<Question> 块在原位渲染成题卡。
@@ -17458,6 +17661,7 @@ function initSelectionSpeech() {
 /* import ../engine/summary.js */
 /* import ../engine/client.js */
 /* import ./speech.js */
+/* import ./icons.js */
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -17496,7 +17700,6 @@ function renderParagraphs(host, text) {
   for (const part of parts) {
     const p = el('p', 'para');
     p.appendChild(renderSegments(part));
-    appendSpeech(p, p.textContent, '朗读段落', { full: true, scope: 'chat' });
     if (p.textContent.trim()) host.appendChild(p);
   }
 }
@@ -17611,10 +17814,10 @@ function renderUsage(host, { prompt, completion, cached }) {
 }
 
 /** 单条消息的删除控件：就地二次确认，避免手滑删掉一段对话。 */
-function messageDeleteControl(id, onDelete) {
+function messageDeleteControl(id, onDelete, busy) {
   const box = el('div', 'msg-del');
-  const btn = el('button', 'msg-del-btn', '×');
-  btn.title = '删除这条消息';
+  const btn = messageActionButton('delete', '删除这条消息');
+  btn.className += ' msg-del-btn'; btn.disabled = busy;
   btn.addEventListener('click', () => {
     const confirm = el('div', 'msg-del-confirm');
     confirm.appendChild(el('span', null, '删除这条？'));
@@ -17628,6 +17831,13 @@ function messageDeleteControl(id, onDelete) {
   });
   box.appendChild(btn);
   return box;
+}
+
+function messageActionButton(icon, label) {
+  const button = el('button', 'message-action');
+  button.type = 'button'; button.title = label; button.setAttribute('aria-label', label);
+  button.appendChild(actionIcon(icon));
+  return button;
 }
 
 /**
@@ -17644,7 +17854,7 @@ function messageDeleteControl(id, onDelete) {
 function renderThread({
   hostEl, session, busy, showThinking = true, onRegenerate = null, onDeleteMessage = null,
   faceFor = null, avatarSrc = '', debugSummaries = false,
-  onMessageAction = null,
+  onMessageAction = null, presentation = null,
 }) {
   const atBottom = hostEl.scrollHeight - hostEl.scrollTop - hostEl.clientHeight < 80;
   let view = threadViews.get(hostEl);
@@ -17661,6 +17871,7 @@ function renderThread({
 
   const renderMessage = (msg, idx, target) => {
     const wrap = el('div', `msg ${msg.role === 'user' ? 'user' : 'assistant'}`);
+    wrap.dataset.messageId = msg.id;
     const who = msg.role === 'user'
       ? el('div', 'msg-who', session?.profile?.name || '你')
       : assistantName(avatarSrc);
@@ -17676,16 +17887,13 @@ function renderThread({
     } else if (msg.role === 'user') {
       renderParagraphs(body, msg.text || '');
     } else {
-      const text = stripTurnSummary(msg.text);
+      const text = stripTurnSummary(presentation && presentation.messageId === msg.id && !presentation.done ? presentation.text : msg.text);
       face = faceFor ? faceFor(text) : null;
       renderAssistant(body, text);
       // 立绘钩子：把这条回复里的表情落到 DOM 上，供外部查询
       if (face?.emotion) wrap.dataset.face = face.emotion;
     }
     wrap.appendChild(body);
-    renderExpression(wrap, face);
-    if (debugSummaries && msg.role === 'assistant' && !msg.compacted) renderSummary(wrap, msg, true);
-
     // 用量：角色回复自带全量；用户消息取「本轮」的输入侧——也就是紧随其后那条回复的 prompt
     let usage = msg.usage;
     if (msg.role === 'user') {
@@ -17694,20 +17902,25 @@ function renderThread({
         ? { prompt: next.usage.prompt, completion: null, cached: next.usage.cached }
         : null;
     }
-    if (usage && renderUsage(wrap, usage)) sawUsage = true;
-    if (onDeleteMessage) wrap.appendChild(messageDeleteControl(msg.id, onDeleteMessage));
-    if (onMessageAction) {
+    if (onMessageAction || onDeleteMessage) {
       const actions = el('div','message-actions');
+      actions.setAttribute('role', 'group'); actions.setAttribute('aria-label', '消息操作');
+      if (onMessageAction) {
       for (const [action,label] of [['copy','复制'], ...(msg.compacted ? [] : msg.role === 'user' ? [['edit','编辑并分支']] : [['regenerate','重新生成分支']])]) {
-        const button=el('button','ghost',label);button.disabled=busy;button.addEventListener('click',()=>onMessageAction(action,msg.id));actions.append(button);
+        const button=messageActionButton(action,label);button.disabled=busy;button.addEventListener('click',()=>onMessageAction(action,msg.id));actions.append(button);
       }
-      if (!msg.compacted) actions.append(speechButton(msg.text, '朗读整条', '朗读整条消息', { full: true, scope: 'chat' }));
-      const branch = el('button', 'ghost', '创建分支');
-      branch.type = 'button'; branch.disabled = busy; branch.title = '从这条消息创建独立对话';
+      if (!msg.compacted) actions.append(speechButton(msg.text, '朗读整条', '朗读整条消息', { full: true, scope: 'chat', icon: true }));
+      const branch = messageActionButton('branch', '创建分支');
+      branch.disabled = busy;
       branch.addEventListener('click', () => onMessageAction('branch', msg.id));
       actions.append(branch);
+      }
+      if (onDeleteMessage) actions.appendChild(messageDeleteControl(msg.id, onDeleteMessage, busy));
       wrap.append(actions);
     }
+    if (usage && renderUsage(wrap, usage)) sawUsage = true;
+    renderExpression(wrap, face);
+    if (debugSummaries && msg.role === 'assistant' && !msg.compacted) renderSummary(wrap, msg, true);
 
     target.appendChild(wrap);
   };
@@ -17863,6 +18076,23 @@ function updateStreaming(host, text) {
   if(atBottom)host.scrollTop=host.scrollHeight;
 }
 
+function updatePresentedMessage(host, id, text, faceFor = null) {
+  const message = [...host.querySelectorAll('.msg')].find(node => node.dataset.messageId === id);
+  const body = message?.querySelector('.msg-body');
+  if (!body) return false;
+  const atBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 100;
+  body.replaceChildren(); renderAssistant(body, text);
+  if (faceFor) {
+    message.querySelector('.msg-expression')?.remove();
+    const face = faceFor(stripTurnSummary(text));
+    if (face?.emotion) message.dataset.face = face.emotion;
+    else delete message.dataset.face;
+    renderExpression(message, face);
+  }
+  if (atBottom) host.scrollTop = host.scrollHeight;
+  return true;
+}
+
 function fillProfileForm({ nameEl, genderEl, customEl, customWrap, profile }) {
   nameEl.value = profile?.name || '';
   genderEl.value = GENDER_VALUES.includes(profile?.gender) ? profile.gender : '女';
@@ -17907,6 +18137,7 @@ function chatToast(message, { error = false, ms = 4200 } = {}) {
     exports.renderThread = renderThread;
     exports.renderSessionList = renderSessionList;
     exports.updateStreaming = updateStreaming;
+    exports.updatePresentedMessage = updatePresentedMessage;
     exports.fillProfileForm = fillProfileForm;
     exports.syncCustomVisibility = syncCustomVisibility;
     exports.readProfileForm = readProfileForm;
@@ -19881,10 +20112,10 @@ function initClientSettings({ legacy, notify, isBusy, onModel, beforeRestore }) 
     const { initLayout } = __req("src/ui/layout.js");
     const { initTutorial } = __req("src/ui/tutorial.js");
     const { initClientSettings, downloadFile } = __req("src/ui/client-settings.js");
-    const { updateStreaming } = __req("src/ui/chat.js");
+    const { updateStreaming, updatePresentedMessage } = __req("src/ui/chat.js");
     const { companionSegment, forkConversation, conversationMarkdown, plainMessageText } = __req("src/engine/client.js");
     const { loadDraft, saveDraft, clearDrafts } = __req("src/storage/client.js");
-    const { initSelectionSpeech, autoReadReply, stopReading } = __req("src/ui/speech.js");
+    const { initSelectionSpeech, autoReadReply, beginReplyReading, stopReading } = __req("src/ui/speech.js");
 /* import ./platform/runtime.js */
 /* import ./gateway/model.js */
 /* import ./engine/limits.js */
@@ -19930,6 +20161,7 @@ let tutorial = null;
 let client = null;
 let replyController = null;
 let partialReply = '';
+let replyPresentation = null;
 let draftTimer = null;
 
 function persistDraft() {
@@ -20312,6 +20544,7 @@ function renderChat() {
     avatarSrc: localMediaUrl(CHARACTER_AVATAR_PATH),
     debugSummaries: session?.debugSummaries === true,
     onMessageAction: messageAction,
+    presentation: replyPresentation?.sessionId === session?.id ? replyPresentation : null,
   });
   if (partialReply && chatBusy) updateStreaming($('chat-thread'), partialReply);
   client?.syncChat(session?.modelId,session?.assistantConfig);
@@ -20449,23 +20682,48 @@ async function generateReply() {
   replyController = new AbortController();
   partialReply = '';
   let frame = null;
+  const presentation = { sessionId: snapshot.id, messageId: null, text: '', done: false };
+  replyPresentation = presentation;
+  const present = text => {
+    if (replyPresentation !== presentation || session?.id !== snapshot.id) return;
+    presentation.text = text;
+    partialReply = text;
+    if (frame === null) frame = requestAnimationFrame(() => {
+      frame = null;
+      if (replyPresentation !== presentation || session?.id !== snapshot.id) return;
+      if (presentation.messageId) updatePresentedMessage($('chat-thread'), presentation.messageId, presentation.text);
+      else updateStreaming($('chat-thread'), partialReply);
+    });
+  };
+  let narration = null;
   try {
+    narration = beginReplyReading({ onText: present, onDone() {
+      presentation.done = true;
+      if (presentation.messageId && replyPresentation === presentation && session?.id === snapshot.id) {
+        const text = session.messages.find(message => message.id === presentation.messageId)?.text || presentation.text;
+        updatePresentedMessage($('chat-thread'), presentation.messageId, text, faceFor);
+      }
+    } });
     const system = buildChatPrompt(snapshot.profile, { emotionList: emotionPromptList() });
     system.segments.push(companionSegment(snapshot.assistantConfig || client.companion()));
     const next = await generateChatTurn(snapshot, system, { ...profile }, { signal: replyController.signal, onDelta: text => {
       if (replyController?.signal.aborted) return;
-      partialReply = text;
-      if (frame === null) frame = requestAnimationFrame(()=>{frame=null;updateStreaming($('chat-thread'),partialReply);});
+      if (narration) narration.push(text); else present(text);
     } });
-    if (!replyAppliesTo(session, snapshot)) return false;
+    if (!replyAppliesTo(session, snapshot)) { narration?.stop(); return false; }
     if (!persistSession(next)) {
       session = retainBodiesAfterSaveFailure(snapshot, next);
+      narration?.stop();
       return false;
     }
     session = next;
-    autoReadReply(next.messages.at(-1)?.text);
+    const reply = next.messages.at(-1);
+    presentation.messageId = reply?.id;
+    if (narration) narration.finish(reply?.text);
+    else { presentation.done = true; autoReadReply(reply?.text); }
     return true;
   } catch (err) {
+    narration?.stop();
     if (err.requestRecord && replyAppliesTo(session, snapshot)) {
       const next = recordRequest(snapshot, err.requestRecord);
       persistSession(next);
@@ -20475,6 +20733,7 @@ async function generateReply() {
     return false;
   } finally {
     if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
     replyController = null;
     partialReply = '';
   }
@@ -20532,6 +20791,7 @@ async function messageAction(action,id) {
       await copyText(text);
       chatToast('已复制');return;
     }
+    stopReading();
     const editText=action==='edit'?await editDialog('编辑消息 · 保留原对话',message.text,true):undefined;
     if(editText===null || session!==snapshot || chatBusy)return;
     if(!persistDraft())return;
@@ -20550,6 +20810,7 @@ async function sessionAction(action,id) {
   if(chatBusy || learning?.isBusy())return;
   try {
     const current=session?.id===id;
+    if(current && action==='trash')stopReading();
     const target=current?session:loadChatSession(id);if(!target)throw new Error('对话无法读取。');
     if(action==='purge'){if(window.confirm('永久删除这段对话？无法撤销。'))removeSession(id);return;}
     const changes={};
@@ -20623,6 +20884,7 @@ function switchSession(id) {
 function removeSession(id) {
   if (chatBusy || !id) return;
   const wasCurrent = session?.id === id;
+  if (wasCurrent) stopReading();
   if (!deleteChatSession(id)) {
     chatToast('删除失败，存档可能已被其他页面修改，请刷新后重试', { error: true });
     return;
@@ -20643,6 +20905,7 @@ function removeSession(id) {
 
 function removeMessage(id) {
   if (chatBusy) return;
+  stopReading();
   const next = deleteMessage(session, id);
   if (!persistSession(next)) return;
   session = next;
@@ -20711,7 +20974,7 @@ async function boot() {
 
   // 对话模式的按钮
   $('btn-chat-send').addEventListener('click', sendChat);
-  $('btn-chat-stop').addEventListener('click',()=>replyController?.abort());
+  $('btn-chat-stop').addEventListener('click',()=>{ replyController?.abort(); stopReading(); });
   $('btn-export-chat').addEventListener('click',()=>{if(session)downloadFile(`${session.title.replace(/[\\/:*?"<>|]/g,'_')}.md`,conversationMarkdown(session),'text/markdown;charset=utf-8').catch(error=>chatToast(error.message,{error:true}));});
   $('chat-input').addEventListener('input',()=>{clearTimeout(draftTimer);$('draft-status').textContent='';draftTimer=setTimeout(persistDraft,450);});
   $('chat-input').addEventListener('blur',persistDraft);

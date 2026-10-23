@@ -68,7 +68,7 @@ export async function synthesizeCloudSpeech(service, segment, rate, { fetchImpl,
   } finally { clearTimeout(timer); signal.removeEventListener('abort', abort); }
 }
 
-export function playSpeechAudio(blob, signal) {
+export function playSpeechAudio(blob, signal, { onProgress } = {}) {
   signal.throwIfAborted();
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
@@ -76,14 +76,17 @@ export function playSpeechAudio(blob, signal) {
     let finished = false;
     const finish = error => {
       if (finished) return; finished = true;
-      clearTimeout(timer); signal.removeEventListener('abort', stop);
+      clearTimeout(timer); clearInterval(progressTimer); signal.removeEventListener('abort', stop);
       audio.onended = audio.onerror = null; audio.pause(); audio.removeAttribute('src'); URL.revokeObjectURL(url);
       error ? reject(error) : resolve();
     };
     const stop = () => finish(new DOMException('已停止朗读', 'AbortError'));
     const timer = setTimeout(() => finish(new Error('音频播放超时，请重试。')), 180000);
+    const progressTimer = onProgress ? setInterval(() => {
+      if (!finished && Number.isFinite(audio.duration) && audio.duration > 0) onProgress(Math.min(1, audio.currentTime / audio.duration));
+    }, 40) : null;
     signal.addEventListener('abort', stop, { once: true });
-    audio.onended = () => finish(); audio.onerror = () => finish(new Error('无法播放语音音频，请重试。'));
+    audio.onended = () => { onProgress?.(1); finish(); }; audio.onerror = () => finish(new Error('无法播放语音音频，请重试。'));
     audio.play().catch(() => finish(new Error('播放未获允许，请点击朗读按钮再试。')));
   });
 }

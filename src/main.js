@@ -38,10 +38,10 @@ import { initResponsiveUI } from './ui/responsive.js';
 import { initLayout } from './ui/layout.js';
 import { initTutorial } from './ui/tutorial.js';
 import { initClientSettings, downloadFile } from './ui/client-settings.js';
-import { updateStreaming } from './ui/chat.js';
+import { updateStreaming, updatePresentedMessage } from './ui/chat.js';
 import { companionSegment, forkConversation, conversationMarkdown, plainMessageText } from './engine/client.js';
 import { loadDraft, saveDraft, clearDrafts } from './storage/client.js';
-import { initSelectionSpeech, autoReadReply, stopReading } from './ui/speech.js';
+import { initSelectionSpeech, autoReadReply, beginReplyReading, stopReading } from './ui/speech.js';
 
 const $ = (id) => document.getElementById(id);
 const NAV_IDS = { learn: 'nav-learn', library: 'nav-library', practice: 'nav-practice', chat: 'nav-chat' };
@@ -60,6 +60,7 @@ let tutorial = null;
 let client = null;
 let replyController = null;
 let partialReply = '';
+let replyPresentation = null;
 let draftTimer = null;
 
 function persistDraft() {
@@ -442,6 +443,7 @@ function renderChat() {
     avatarSrc: localMediaUrl(CHARACTER_AVATAR_PATH),
     debugSummaries: session?.debugSummaries === true,
     onMessageAction: messageAction,
+    presentation: replyPresentation?.sessionId === session?.id ? replyPresentation : null,
   });
   if (partialReply && chatBusy) updateStreaming($('chat-thread'), partialReply);
   client?.syncChat(session?.modelId,session?.assistantConfig);
@@ -579,23 +581,48 @@ async function generateReply() {
   replyController = new AbortController();
   partialReply = '';
   let frame = null;
+  const presentation = { sessionId: snapshot.id, messageId: null, text: '', done: false };
+  replyPresentation = presentation;
+  const present = text => {
+    if (replyPresentation !== presentation || session?.id !== snapshot.id) return;
+    presentation.text = text;
+    partialReply = text;
+    if (frame === null) frame = requestAnimationFrame(() => {
+      frame = null;
+      if (replyPresentation !== presentation || session?.id !== snapshot.id) return;
+      if (presentation.messageId) updatePresentedMessage($('chat-thread'), presentation.messageId, presentation.text);
+      else updateStreaming($('chat-thread'), partialReply);
+    });
+  };
+  let narration = null;
   try {
+    narration = beginReplyReading({ onText: present, onDone() {
+      presentation.done = true;
+      if (presentation.messageId && replyPresentation === presentation && session?.id === snapshot.id) {
+        const text = session.messages.find(message => message.id === presentation.messageId)?.text || presentation.text;
+        updatePresentedMessage($('chat-thread'), presentation.messageId, text, faceFor);
+      }
+    } });
     const system = buildChatPrompt(snapshot.profile, { emotionList: emotionPromptList() });
     system.segments.push(companionSegment(snapshot.assistantConfig || client.companion()));
     const next = await generateChatTurn(snapshot, system, { ...profile }, { signal: replyController.signal, onDelta: text => {
       if (replyController?.signal.aborted) return;
-      partialReply = text;
-      if (frame === null) frame = requestAnimationFrame(()=>{frame=null;updateStreaming($('chat-thread'),partialReply);});
+      if (narration) narration.push(text); else present(text);
     } });
-    if (!replyAppliesTo(session, snapshot)) return false;
+    if (!replyAppliesTo(session, snapshot)) { narration?.stop(); return false; }
     if (!persistSession(next)) {
       session = retainBodiesAfterSaveFailure(snapshot, next);
+      narration?.stop();
       return false;
     }
     session = next;
-    autoReadReply(next.messages.at(-1)?.text);
+    const reply = next.messages.at(-1);
+    presentation.messageId = reply?.id;
+    if (narration) narration.finish(reply?.text);
+    else { presentation.done = true; autoReadReply(reply?.text); }
     return true;
   } catch (err) {
+    narration?.stop();
     if (err.requestRecord && replyAppliesTo(session, snapshot)) {
       const next = recordRequest(snapshot, err.requestRecord);
       persistSession(next);
@@ -605,6 +632,7 @@ async function generateReply() {
     return false;
   } finally {
     if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
     replyController = null;
     partialReply = '';
   }
@@ -662,6 +690,7 @@ async function messageAction(action,id) {
       await copyText(text);
       chatToast('已复制');return;
     }
+    stopReading();
     const editText=action==='edit'?await editDialog('编辑消息 · 保留原对话',message.text,true):undefined;
     if(editText===null || session!==snapshot || chatBusy)return;
     if(!persistDraft())return;
@@ -680,6 +709,7 @@ async function sessionAction(action,id) {
   if(chatBusy || learning?.isBusy())return;
   try {
     const current=session?.id===id;
+    if(current && action==='trash')stopReading();
     const target=current?session:loadChatSession(id);if(!target)throw new Error('对话无法读取。');
     if(action==='purge'){if(window.confirm('永久删除这段对话？无法撤销。'))removeSession(id);return;}
     const changes={};
@@ -753,6 +783,7 @@ function switchSession(id) {
 function removeSession(id) {
   if (chatBusy || !id) return;
   const wasCurrent = session?.id === id;
+  if (wasCurrent) stopReading();
   if (!deleteChatSession(id)) {
     chatToast('删除失败，存档可能已被其他页面修改，请刷新后重试', { error: true });
     return;
@@ -773,6 +804,7 @@ function removeSession(id) {
 
 function removeMessage(id) {
   if (chatBusy) return;
+  stopReading();
   const next = deleteMessage(session, id);
   if (!persistSession(next)) return;
   session = next;
@@ -841,7 +873,7 @@ async function boot() {
 
   // 对话模式的按钮
   $('btn-chat-send').addEventListener('click', sendChat);
-  $('btn-chat-stop').addEventListener('click',()=>replyController?.abort());
+  $('btn-chat-stop').addEventListener('click',()=>{ replyController?.abort(); stopReading(); });
   $('btn-export-chat').addEventListener('click',()=>{if(session)downloadFile(`${session.title.replace(/[\\/:*?"<>|]/g,'_')}.md`,conversationMarkdown(session),'text/markdown;charset=utf-8').catch(error=>chatToast(error.message,{error:true}));});
   $('chat-input').addEventListener('input',()=>{clearTimeout(draftTimer);$('draft-status').textContent='';draftTimer=setTimeout(persistDraft,450);});
   $('chat-input').addEventListener('blur',persistDraft);

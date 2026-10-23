@@ -1,6 +1,7 @@
 import { normalizeSpeechOptions, selectSpeechVoice, missingVoiceMessage, splitSpeechText, englishText } from '../engine/speech.js';
 import { normalizeVoiceService, validateVoiceService, voiceSegments, VOICE_PROVIDERS } from '../engine/voice-service.js';
 import { synthesizeCloudSpeech, playSpeechAudio } from './cloud-speech.js';
+import { createReplyNarration } from '../engine/reply-narration.js';
 
 export function nativeRuntime() { return globalThis.__dreamwhaleNative || null; }
 export function appStorage() { return nativeRuntime()?.storage || globalThis.localStorage; }
@@ -96,6 +97,56 @@ async function speakSystemText(text, options, run, onVoice) {
       globalThis.speechSynthesis.speak(utterance);
     });
   }
+}
+export function narrateReply(serviceRaw, { onText, onDone, onError, onNotice } = {}) {
+  const stopping = Promise.resolve(stopSpeech());
+  const run = speechRun;
+  const controller = new AbortController(); cloudController = controller;
+  const service = normalizeVoiceService(serviceRaw);
+  const signal = controller.signal;
+  let fallbackNotice = false;
+  const narration = createReplyNarration({
+    signal, onText, onCancel() {
+      controller.abort();
+      if (run === speechRun) Promise.resolve(stopSpeech()).catch(onError);
+    },
+    async prepare(text) {
+      await stopping; signal.throwIfAborted();
+      const segments = voiceSegments(text, service.speechAccent);
+      const clips = [];
+      try {
+        for (const segment of segments) {
+          validateVoiceService(service, segment.language);
+          const blob = await synthesizeCloudSpeech(service, segment, service.speechRate, { fetchImpl: appFetch, signal });
+          clips.push({ blob, weight: [...segment.text].length });
+        }
+      } catch (error) {
+        if (signal.aborted || !service.fallback) throw error;
+        const fallbackText = englishText(text);
+        if (!fallbackText) throw error;
+        if (!fallbackNotice) { fallbackNotice = true; onNotice?.(`${error.message} 正在尝试系统英文朗读。`); }
+        return [{ fallbackText, weight: [...fallbackText].length }];
+      }
+      return clips;
+    },
+    async play(clips, progress) {
+      const total = clips.reduce((sum, clip) => sum + clip.weight, 0);
+      let played = 0;
+      for (const clip of clips) {
+        signal.throwIfAborted();
+        if (clip.fallbackText) {
+          await speakSystemText(clip.fallbackText, normalizeSpeechOptions(service), run);
+          signal.throwIfAborted();
+          progress((played + clip.weight) / total);
+        } else await playSpeechAudio(clip.blob, signal, { onProgress: fraction => progress((played + fraction * clip.weight) / total) });
+        played += clip.weight;
+      }
+    },
+    onDone() { if (cloudController === controller) cloudController = null; onDone?.(); },
+    onError(error) { controller.abort(); onError?.(error); },
+  });
+  stopping.catch(error => { controller.abort(); onError?.(error); });
+  return { ...narration, stop: () => controller.abort() };
 }
 export async function saveTextFile(name, content, type = 'application/json') {
   if (nativeRuntime()?.saveFile) return nativeRuntime().saveFile(name, content, type);

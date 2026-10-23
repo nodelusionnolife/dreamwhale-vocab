@@ -848,19 +848,26 @@
   html.ui-modern .chat-toolbar { background:var(--surface); border-color:var(--line); gap:8px; flex-wrap:wrap; }
   html.ui-modern .chat-toolbar select { background:var(--panel-2); border-radius:10px; }
   html.ui-modern #chat-thread { padding:24px 20px 12px; }
-  html.ui-modern .msg { width:fit-content; max-width:90%; margin-bottom:24px; }
+  html.ui-modern .msg { width:fit-content; max-width:min(76%,600px); margin-bottom:24px; }
   html.ui-modern .msg.user { margin-left:auto; }
-  html.ui-modern .msg-who { font-size:12px; }
+  html.ui-modern .msg-who { display:flex; width:fit-content; font-size:12px; }
+  html.ui-modern .msg.user .msg-who { margin-left:auto; }
+  html.ui-modern .msg-body { display:block; width:fit-content; max-width:100%; }
+  html.ui-modern .msg.user .msg-body { margin-left:auto; }
   html.ui-modern .character-avatar { width:28px; height:28px; border-radius:50%; }
   html.ui-modern .msg.assistant .msg-body { background:var(--surface); color:var(--fg); border:1px solid var(--line); border-radius:18px 18px 18px 4px; padding:14px 18px; box-shadow:var(--shadow-sm); backdrop-filter:blur(15px); }
   html.ui-modern .msg.user .msg-body { background:var(--accent-gradient); color:#fff; border:1px solid transparent; border-radius:18px 18px 4px 18px; padding:14px 18px; box-shadow:0 4px 16px #667eea30; }
   html.ui-modern .msg.user .msg-body :is(.seg-env,.seg-action,.seg-thought,.seg-speech) { color:inherit; }
   html.ui-modern .msg.user .msg-body .speech-button { color:#fff; background:#ffffff18; border-color:#ffffff50; }
-  html.ui-modern .msg-del { position:static; opacity:1; display:flex; justify-content:flex-end; margin-top:4px; }
-  html.ui-modern .msg.user .msg-del { justify-content:flex-start; }
-  html.ui-modern .msg-del-btn { color:var(--muted); background:var(--surface); }
-  html.ui-modern .message-actions { flex-wrap:wrap; gap:4px; margin:6px 0 0; }
-  html.ui-modern .message-actions button { font-size:11px; min-height:34px; color:var(--muted); background:var(--surface); border-color:var(--line); border-radius:8px; padding:6px 10px; }
+  html.ui-modern .message-actions { position:relative; display:flex; align-items:center; flex-wrap:nowrap; width:max-content; max-width:100%; gap:2px; margin:4px 0 0; }
+  html.ui-modern .msg.user .message-actions { margin-left:auto; }
+  html.ui-modern .message-actions .message-action { display:inline-flex; align-items:center; justify-content:center; flex:none; width:32px; height:32px; min-height:32px; padding:0; margin:0; color:#c5cbd6; background:transparent; border:1px solid transparent; border-radius:8px; box-shadow:none; }
+  html.ui-modern .message-actions .message-action:hover, html.ui-modern .message-actions .message-action:focus-visible { color:#fff; background:#ffffff1c; border-color:#ffffff45; }
+  html.ui-modern .message-actions .message-action:disabled { opacity:.35; }
+  html.ui-modern .message-actions .message-action svg { flex:none; }
+  html.ui-modern .message-actions .msg-del { position:static; display:flex; opacity:1; margin:0; width:32px; height:32px; }
+  html.ui-modern .message-actions .msg-del-confirm { position:absolute; right:0; top:0; z-index:2; min-height:32px; background:var(--panel); box-shadow:var(--shadow-sm); }
+  html.ui-modern .message-actions .msg-del-confirm button { min-height:28px; }
   html.ui-modern .regen-bar.branch-ready { background:var(--accent-soft); border-color:var(--accent); color:var(--fg); }
   html.ui-modern .qcard { background:var(--accent-soft); border:1px solid var(--line); border-left:3px solid var(--accent); color:var(--fg); border-radius:16px; }
   html.ui-modern #chat-composer { background:var(--surface); border-color:var(--line); }
@@ -897,11 +904,12 @@
   html.ui-modern[data-layout="mobile"] #view-chat { padding:0; gap:0; }
   html.ui-modern[data-layout="mobile"] #chat-main { border-radius:0; border:0; }
   html.ui-modern[data-layout="mobile"] #chat-thread { padding:16px max(12px,var(--safe-area-inset-right,env(safe-area-inset-right))) 8px max(12px,var(--safe-area-inset-left,env(safe-area-inset-left))); }
-  html.ui-modern[data-layout="mobile"] .msg { max-width:95%; }
+  html.ui-modern[data-layout="mobile"] .msg { max-width:88%; }
   html.ui-modern[data-layout="mobile"] .msg.assistant .msg-who { padding-right:0; min-height:28px; }
   html.ui-modern[data-layout="mobile"] .msg.user .msg-who { margin-bottom:8px; }
   html.ui-modern[data-layout="mobile"] .msg.assistant .msg-body, html.ui-modern[data-layout="mobile"] .msg.user .msg-body { padding:12px 14px; }
-  html.ui-modern[data-layout="mobile"] .message-actions button { min-height:44px; }
+  html.ui-modern[data-layout="mobile"] .message-actions .message-action, html.ui-modern[data-layout="mobile"] .message-actions .msg-del { width:40px; height:44px; min-height:44px; }
+  html.ui-modern[data-layout="mobile"] .message-actions .msg-del-confirm { min-height:44px; }
   html.ui-modern[data-layout="mobile"] dialog { border-radius:24px 24px 0 0; padding:20px max(16px,var(--safe-area-inset-right,env(safe-area-inset-right))) calc(20px + var(--safe-area-inset-bottom,env(safe-area-inset-bottom))) max(16px,var(--safe-area-inset-left,env(safe-area-inset-left))); }
   html.ui-modern[data-layout="mobile"] .settings-tabs { top:-20px; }
   html.ui-modern #settings {
@@ -1014,7 +1022,7 @@
         <div class="field"><label for="voice-accent">聊天英语口音</label><select id="voice-accent"><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></div>
         <div class="field"><label for="voice-rate">聊天语速 · <output id="voice-rate-label" for="voice-rate">0.85×</output></label><input id="voice-rate" type="range" min="0.5" max="1.5" step="0.05" value="0.85" /></div>
       </fieldset>
-      <div class="field"><label><input id="voice-auto-read" type="checkbox" /> 梦鲸回复完成后自动朗读</label></div>
+      <div class="field"><label><input id="voice-auto-read" type="checkbox" /> 自动朗读回复（在线语音边显示边朗读）</label></div>
       <p id="voice-storage-hint" class="hint"></p>
       <p class="hint">服务配置修改后需保存。试听会保存并调用所选服务，在线合成可能产生费用。系统语音目前朗读英文，在线服务支持中英文。</p>
       <div class="actions"><button id="voice-save" type="button">保存语音服务</button></div>

@@ -9,6 +9,7 @@ import { stripStickerTags } from '../engine/assets.js';
 import { stripTurnSummary } from '../engine/summary.js';
 import { filterSessions } from '../engine/client.js';
 import { appendSpeech, speechButton } from './speech.js';
+import { actionIcon } from './icons.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -47,7 +48,6 @@ function renderParagraphs(host, text) {
   for (const part of parts) {
     const p = el('p', 'para');
     p.appendChild(renderSegments(part));
-    appendSpeech(p, p.textContent, '朗读段落', { full: true, scope: 'chat' });
     if (p.textContent.trim()) host.appendChild(p);
   }
 }
@@ -162,10 +162,10 @@ function renderUsage(host, { prompt, completion, cached }) {
 }
 
 /** 单条消息的删除控件：就地二次确认，避免手滑删掉一段对话。 */
-function messageDeleteControl(id, onDelete) {
+function messageDeleteControl(id, onDelete, busy) {
   const box = el('div', 'msg-del');
-  const btn = el('button', 'msg-del-btn', '×');
-  btn.title = '删除这条消息';
+  const btn = messageActionButton('delete', '删除这条消息');
+  btn.className += ' msg-del-btn'; btn.disabled = busy;
   btn.addEventListener('click', () => {
     const confirm = el('div', 'msg-del-confirm');
     confirm.appendChild(el('span', null, '删除这条？'));
@@ -179,6 +179,13 @@ function messageDeleteControl(id, onDelete) {
   });
   box.appendChild(btn);
   return box;
+}
+
+function messageActionButton(icon, label) {
+  const button = el('button', 'message-action');
+  button.type = 'button'; button.title = label; button.setAttribute('aria-label', label);
+  button.appendChild(actionIcon(icon));
+  return button;
 }
 
 /**
@@ -195,7 +202,7 @@ function messageDeleteControl(id, onDelete) {
 export function renderThread({
   hostEl, session, busy, showThinking = true, onRegenerate = null, onDeleteMessage = null,
   faceFor = null, avatarSrc = '', debugSummaries = false,
-  onMessageAction = null,
+  onMessageAction = null, presentation = null,
 }) {
   const atBottom = hostEl.scrollHeight - hostEl.scrollTop - hostEl.clientHeight < 80;
   let view = threadViews.get(hostEl);
@@ -212,6 +219,7 @@ export function renderThread({
 
   const renderMessage = (msg, idx, target) => {
     const wrap = el('div', `msg ${msg.role === 'user' ? 'user' : 'assistant'}`);
+    wrap.dataset.messageId = msg.id;
     const who = msg.role === 'user'
       ? el('div', 'msg-who', session?.profile?.name || '你')
       : assistantName(avatarSrc);
@@ -227,16 +235,13 @@ export function renderThread({
     } else if (msg.role === 'user') {
       renderParagraphs(body, msg.text || '');
     } else {
-      const text = stripTurnSummary(msg.text);
+      const text = stripTurnSummary(presentation && presentation.messageId === msg.id && !presentation.done ? presentation.text : msg.text);
       face = faceFor ? faceFor(text) : null;
       renderAssistant(body, text);
       // 立绘钩子：把这条回复里的表情落到 DOM 上，供外部查询
       if (face?.emotion) wrap.dataset.face = face.emotion;
     }
     wrap.appendChild(body);
-    renderExpression(wrap, face);
-    if (debugSummaries && msg.role === 'assistant' && !msg.compacted) renderSummary(wrap, msg, true);
-
     // 用量：角色回复自带全量；用户消息取「本轮」的输入侧——也就是紧随其后那条回复的 prompt
     let usage = msg.usage;
     if (msg.role === 'user') {
@@ -245,20 +250,25 @@ export function renderThread({
         ? { prompt: next.usage.prompt, completion: null, cached: next.usage.cached }
         : null;
     }
-    if (usage && renderUsage(wrap, usage)) sawUsage = true;
-    if (onDeleteMessage) wrap.appendChild(messageDeleteControl(msg.id, onDeleteMessage));
-    if (onMessageAction) {
+    if (onMessageAction || onDeleteMessage) {
       const actions = el('div','message-actions');
+      actions.setAttribute('role', 'group'); actions.setAttribute('aria-label', '消息操作');
+      if (onMessageAction) {
       for (const [action,label] of [['copy','复制'], ...(msg.compacted ? [] : msg.role === 'user' ? [['edit','编辑并分支']] : [['regenerate','重新生成分支']])]) {
-        const button=el('button','ghost',label);button.disabled=busy;button.addEventListener('click',()=>onMessageAction(action,msg.id));actions.append(button);
+        const button=messageActionButton(action,label);button.disabled=busy;button.addEventListener('click',()=>onMessageAction(action,msg.id));actions.append(button);
       }
-      if (!msg.compacted) actions.append(speechButton(msg.text, '朗读整条', '朗读整条消息', { full: true, scope: 'chat' }));
-      const branch = el('button', 'ghost', '创建分支');
-      branch.type = 'button'; branch.disabled = busy; branch.title = '从这条消息创建独立对话';
+      if (!msg.compacted) actions.append(speechButton(msg.text, '朗读整条', '朗读整条消息', { full: true, scope: 'chat', icon: true }));
+      const branch = messageActionButton('branch', '创建分支');
+      branch.disabled = busy;
       branch.addEventListener('click', () => onMessageAction('branch', msg.id));
       actions.append(branch);
+      }
+      if (onDeleteMessage) actions.appendChild(messageDeleteControl(msg.id, onDeleteMessage, busy));
       wrap.append(actions);
     }
+    if (usage && renderUsage(wrap, usage)) sawUsage = true;
+    renderExpression(wrap, face);
+    if (debugSummaries && msg.role === 'assistant' && !msg.compacted) renderSummary(wrap, msg, true);
 
     target.appendChild(wrap);
   };
@@ -412,6 +422,23 @@ export function updateStreaming(host, text) {
   const safe=text.replace(/<(TurnSummary|AnswerKey|TeachingReference|Face|Sticker)>[\s\S]*?(?:<\/\1>|$)/gi,'').replace(/<[^>]*$/,'');
   renderAssistant(body,safe);
   if(atBottom)host.scrollTop=host.scrollHeight;
+}
+
+export function updatePresentedMessage(host, id, text, faceFor = null) {
+  const message = [...host.querySelectorAll('.msg')].find(node => node.dataset.messageId === id);
+  const body = message?.querySelector('.msg-body');
+  if (!body) return false;
+  const atBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 100;
+  body.replaceChildren(); renderAssistant(body, text);
+  if (faceFor) {
+    message.querySelector('.msg-expression')?.remove();
+    const face = faceFor(stripTurnSummary(text));
+    if (face?.emotion) message.dataset.face = face.emotion;
+    else delete message.dataset.face;
+    renderExpression(message, face);
+  }
+  if (atBottom) host.scrollTop = host.scrollHeight;
+  return true;
 }
 
 export function fillProfileForm({ nameEl, genderEl, customEl, customWrap, profile }) {

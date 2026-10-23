@@ -1,15 +1,23 @@
-import { speakText, stopSpeech, prepareSpeech, nativeRuntime, flushStorage } from '../platform/runtime.js';
+import { speakText, stopSpeech, prepareSpeech, nativeRuntime, flushStorage, narrateReply } from '../platform/runtime.js';
 import { englishText, speechAccentMatches, speechVoiceStatus } from '../engine/speech.js';
 import { loadPreferences } from '../storage/client.js';
 import { loadVoiceService, saveVoiceService } from '../storage/voice-service.js';
 import { speechText, chatSpeechText, normalizeVoiceService } from '../engine/voice-service.js';
+import { actionIcon } from './icons.js';
 
 let active = null;
 let sequence = 0;
 let notice;
 function resetButton() {
   const stop = document.getElementById('btn-stop-reading'); if (stop) stop.disabled = true;
-  if (active) { active.textContent = active.dataset.speechLabel; active.setAttribute('aria-label', active.dataset.speechAria); active.setAttribute('aria-pressed', 'false'); active = null; }
+  if (active) { setReadingControl(active, false); active = null; }
+}
+function setReadingControl(control, playing) {
+  if (control.dataset.speechIcon === 'true') control.replaceChildren(actionIcon(playing ? 'stop' : 'volume'));
+  else control.textContent = playing ? '■ 停止' : control.dataset.speechLabel;
+  control.setAttribute('aria-label', playing ? '停止朗读' : control.dataset.speechAria);
+  control.setAttribute('aria-pressed', String(playing));
+  control.title = playing ? '停止朗读' : control.dataset.speechAria;
 }
 export function stopReading() {
   sequence++; resetButton();
@@ -26,7 +34,7 @@ export async function readAloud(raw, control, { full = false, scope = 'learning'
   if (!text) return;
   const request = ++sequence; resetButton(); if (notice) notice.hidden = true;
   const stop = document.getElementById('btn-stop-reading'); if (stop) stop.disabled = false;
-  if (control) { active = control; control.textContent = '■ 停止'; control.setAttribute('aria-label', '停止朗读'); control.setAttribute('aria-pressed', 'true'); }
+  if (control) { active = control; setReadingControl(control, true); }
   try {
     const service = scope === 'chat' ? normalizeVoiceService(override || loadVoiceService()) : undefined;
     const preferences = service ? { speechAccent: service.speechAccent, speechRate: service.speechRate, speechOffline: false } : loadPreferences();
@@ -42,6 +50,7 @@ export function speechButton(text, label = '朗读', accessible = label, options
   const button = document.createElement('button'); button.type = 'button'; button.className = 'speech-button';
   button.textContent = `▶ ${label}`; button.dataset.speechLabel = button.textContent;
   button.dataset.speechAria = accessible; button.setAttribute('aria-label', accessible); button.setAttribute('aria-pressed', 'false');
+  if (options.icon) { button.dataset.speechIcon = 'true'; button.className += ' message-action'; setReadingControl(button, false); }
   button.addEventListener('click', event => { event.stopPropagation(); return readAloud(typeof text === 'function' ? text() : text, button, options); });
   return button;
 }
@@ -53,6 +62,19 @@ export function autoReadReply(text) {
     if (document.hidden || !document.body.classList.contains('chat-mode') || document.getElementById('settings')?.open || !loadVoiceService().autoRead) return;
     return readAloud(text, null, { full: true, scope: 'chat' });
   } catch (error) { showError(error); }
+}
+export function beginReplyReading({ onText, onDone }) {
+  const service = loadVoiceService();
+  if (!service.autoRead || service.provider === 'system' || document.hidden || !document.body.classList.contains('chat-mode') || document.getElementById('settings')?.open) return null;
+  const request = ++sequence;
+  resetButton();
+  const stop = document.getElementById('btn-stop-reading'); if (stop) stop.disabled = false;
+  return narrateReply(service, {
+    onText,
+    onDone() { if (request === sequence) resetButton(); onDone?.(); },
+    onError(error) { if (request === sequence) showError(error); },
+    onNotice(message) { if (request === sequence) showError(message); },
+  });
 }
 export function initSpeechSettings({ getPreferences, save, notify }) {
   const $ = id => document.getElementById(id);
@@ -105,7 +127,7 @@ export function initSpeechSettings({ getPreferences, save, notify }) {
   async function persist() {
     const request = saveService(); await flushStorage(); return request;
   }
-  $('voice-provider').addEventListener('change', () => { capture(); provider = $('voice-provider').value; fill(); });
+  $('voice-provider').addEventListener('change', () => { capture(); provider = $('voice-provider').value; if (provider !== 'system') draft.autoRead = true; fill(); });
   $('voice-rate').addEventListener('input', () => { $('voice-rate-label').textContent = `${Number($('voice-rate').value).toFixed(2)}×`; });
   $('voice-show-key').addEventListener('change', () => { $('voice-api-key').type = $('voice-show-key').checked ? 'text' : 'password'; });
   $('voice-save').addEventListener('click', async () => {
