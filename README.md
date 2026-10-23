@@ -48,9 +48,9 @@ node serve.mjs
 
 | 平台 | 下载 |
 |---|---|
-| Android 7.0 及以上 | [Android APK](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.0/dreamwhale-vocab-0.15.0-android.apk) |
-| Windows x64 | [Windows 安装程序](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.0/dreamwhale-vocab-0.15.0-windows-x64-setup.exe) |
-| 网页与源码 | [单文件 HTML](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.0/dreamwhale-vocab-0.15.0.html) · [源码 ZIP](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.0/dreamwhale-vocab-0.15.0-source.zip) |
+| Android 7.0 及以上 | [Android APK](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1-android.apk) |
+| Windows x64 | [Windows 安装程序](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1-windows-x64-setup.exe) |
+| 网页与源码 | [单文件 HTML](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1.html) · [源码 ZIP](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1-source.zip) |
 
 - **Windows x64**：新安装默认目录为 `%LOCALAPPDATA%\Programs\Dreamwhale`。显示名称仍为「梦鲸词汇」，安装时可以更改目录；已有安装升级时沿用原目录。
 - **Android**：最低 Android 7.0，需要较新的系统 WebView。项目生成的 APK 使用本机构建环境的测试签名。
@@ -135,4 +135,4 @@ tools/            构建、内容生成与导出工具
 
 ## 许可
 
-项目采用 [MIT 许可证](LICENSE)。ECDICT 释义保留其 [MIT 许可](content-sources/ECDICT-LICENSE.txt)，Windows 安装器模板保留 [Tauri MIT 许可](src-tauri/installer/TAURI-LICENSE-MIT.txt)。梦鲸表情、头像及场景插画为项目 AI 生成素材；题目为自编练习，不是官方真题。未加载的历史词表及其维护范围见 [词库来源说明](content-sources/README.md)。
+项目采用 [MIT 许可证](LICENSE)。ECDICT 释义保留其 [MIT 许可](content-sources/ECDICT-LICENSE.txt)，Windows 安装器模板保留 [Tauri MIT 许可](src-tauri/installer/TAURI-LICENSE-MIT.txt)。梦鲸应用图标、表情、头像及场景插画为项目 AI 生成素材；题目为自编练习，不是官方真题。内容来源与整理范围见 [词库来源说明](content-sources/README.md)。

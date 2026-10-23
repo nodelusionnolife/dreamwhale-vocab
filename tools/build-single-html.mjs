@@ -275,7 +275,8 @@ bundle += `\n  __req(${JSON.stringify(ENTRY)});\n})();\n`;
 // 内联脚本里出现 </script 会把 HTML 解析器提前收尾；转义后在任何 JS 上下文里都等价
 const safeBundle = bundle.replace(/<\/script/gi, '<\\/script');
 
-const html = readFile('index.html');
+const html = readFile('index.html').replace('./assets/branding/app-icon.png', () =>
+  `data:image/png;base64,${fs.readFileSync(path.join(ROOT, 'assets/branding/app-icon.png')).toString('base64')}`);
 const TAG = /^[ \t]*<script\b[^>]*\bsrc=[^>]*><\/script>[ \t]*$/m;
 const matched = TAG.exec(html);
 if (!matched) throw new Error('index.html 里没找到 <script src> 那一行，打包器不知道怎么接进去');

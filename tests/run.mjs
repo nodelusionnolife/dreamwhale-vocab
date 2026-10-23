@@ -1767,7 +1767,10 @@ t('单文件产物把本地资产挂进 __wbAssets，且值是 data URL', () => 
   for (const p of local) {
     ok(html.includes(`"${p}":"data:image/webp;base64,`), `本地资产没挂进映射表：${p}`);
   }
-  eq((html.match(/data:image\//g) || []).length, local.length, '产物里的 data URL 数量与本地资产数不一致');
+  const favicon = html.match(/<link\b[^>]*rel="icon"[^>]*href="data:image\/png;base64,([^"]+)"/);
+  ok(favicon, '单文件产物应内联应用图标');
+  eq(favicon[1], fs.readFileSync(path.join(root, 'assets/branding/app-icon.png')).toString('base64'), '应用图标与源文件不一致');
+  eq((html.match(/data:image\//g) || []).length, local.length + 1, '产物应包含全部本地媒体与一个应用图标');
 });
 t('表情与头像均经过单文件媒体映射', () => {
   const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
