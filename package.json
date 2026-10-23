@@ -1,6 +1,6 @@
 {
   "name": "dreamwhale-vocab",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "private": true,
   "type": "module",
   "description": "梦鲸词汇 · 离线练习、间隔复习与角色聊天。",

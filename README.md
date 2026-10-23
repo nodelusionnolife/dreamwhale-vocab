@@ -48,9 +48,9 @@ node serve.mjs
 
 | 平台 | 下载 |
 |---|---|
-| Android 7.0 及以上 | [Android APK](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1-android.apk) |
-| Windows x64 | [Windows 安装程序](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1-windows-x64-setup.exe) |
-| 网页与源码 | [单文件 HTML](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1.html) · [源码 ZIP](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.1/dreamwhale-vocab-0.15.1-source.zip) |
+| Android 7.0 及以上 | [Android APK](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2-android.apk) |
+| Windows x64 | [Windows 安装程序](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2-windows-x64-setup.exe) |
+| 网页与源码 | [单文件 HTML](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2.html) · [源码 ZIP](https://github.com/nodelusionnolife/dreamwhale-vocab/releases/download/v0.15.2/dreamwhale-vocab-0.15.2-source.zip) |
 
 - **Windows x64**：新安装默认目录为 `%LOCALAPPDATA%\Programs\Dreamwhale`。显示名称仍为「梦鲸词汇」，安装时可以更改目录；已有安装升级时沿用原目录。
 - **Android**：最低 Android 7.0，需要较新的系统 WebView。项目生成的 APK 使用本机构建环境的测试签名。
@@ -75,7 +75,7 @@ node serve.mjs
 
 四级和六级的高频范围均有 11 类训练。已有的 2,855 个「级别＋目标词＋题型」组合，每个至少有两道不同题目。短文理解覆盖四级 150/290 词、六级 101/188 词，情境表达覆盖四级 226/290 词、六级 141/188 词；搭配、词形、易混、改错和短语各级有 136–160 道题，覆盖仍有限，并非每个词都有全部题型。各类均有基础与进阶。专项每组可选 10、20、30 题，每词一道，筛选后词量不足时按实际数量出题。[高频专项说明](content-sources/high-frequency-exercises.md)列出公开参考、题数和覆盖词数；导出附逐词各题型数量及缺口，这些词汇训练不等同于一套完整真题。
 
-每个大纲词保留来源页码，高频词可查看命中渠道。完整来源、许可和数据再生成方法见 [词库来源](content-sources/README.md)。
+完整来源、许可和数据再生成方法见 [词库来源](content-sources/README.md)。
 
 ## 模型与朗读
 

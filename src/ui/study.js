@@ -9,10 +9,9 @@ import { localMediaUrl } from '../platform/media.js';
 import { CHARACTER_AVATAR_PATH } from '../content/emotions.js';
 import { SCENE_PATHS } from '../content/scenes.js';
 import { speechButton, appendSpeech } from './speech.js';
-import { BANKS, FREQUENCIES, matchesBank, frequencySources } from '../engine/banks.js';
-import { CET6_WORDS, CET6_SOURCE, CET6_DICTIONARY_LICENSE } from '../content/cet6-words.js';
-import { CET4_WORDS, CET4_SOURCE } from '../content/cet4-syllabus.js';
-import { FREQUENCY_SOURCES } from '../content/frequency.js';
+import { BANKS, FREQUENCIES, matchesBank } from '../engine/banks.js';
+import { CET6_WORDS } from '../content/cet6-words.js';
+import { CET4_WORDS } from '../content/cet4-syllabus.js';
 
 const node = (tag, cls = '', text = '') => { const e = document.createElement(tag); e.className = cls; e.textContent = text; return e; };
 const button = (label, action, cls = '') => { const e = node('button', cls, label); e.type = 'button'; e.addEventListener('click', action); return e; };
@@ -75,10 +74,6 @@ export function createStudyViews({ host, getState, questionCard, start, resume, 
     return b;
   }
 
-  function sourceLink(text, url) {
-    const link = node('a', '', text); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; return link;
-  }
-
   function bankPicker(state) {
     const box = node('section', 'bank-picker');
     const tabs = node('div', 'filter-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', '题库选择');
@@ -99,20 +94,7 @@ export function createStudyViews({ host, getState, questionCard, start, resume, 
       }, (state.plan.frequency || 'all') === id ? 'active' : 'ghost');
       tab.setAttribute('aria-pressed', String((state.plan.frequency || 'all') === id)); tab.disabled = isBusy(); frequencies.append(tab);
     }
-    const info = node('details', 'bank-source');
-    info.append(node('summary', '', '词表来源与收录范围'),
-      node('p', '', '四级：大纲未标★主词及原有扩展练习；六级：大纲★标记词；混合：合并两类。选择用于学习、词库、专项和聊天出题。'),
-      node('p', '', `大纲词条：四级 ${CET4_WORDS.length.toLocaleString()} 个拼法，六级 ${CET6_WORDS.length.toLocaleString()} 个主词。四级并列拼法分列，同形词合并；派生词栏未另行展开。练习为自编题。`),
-      node('p', '', '高频：同级别两个渠道共同收录的词。资料为历史备考词表，不是官方考频排名，也未按真题年份统计。题目难度按具体任务区分，每个级别均有基础与进阶练习。'),
-      sourceLink(CET6_SOURCE.title, CET6_SOURCE.indexUrl),
-      node('p', '', '中文释义整理自 ECDICT，并校订部分词义与词性。'));
-    const references = node('ul');
-    for (const source of FREQUENCY_SOURCES) {
-      const item = node('li'); item.append(sourceLink(source.title, source.url)); references.append(item);
-    }
-    info.append(references, sourceLink('ECDICT · MIT License', CET6_SOURCE.dictionary));
-    const license = node('details'); license.append(node('summary', '', '查看词典许可'), node('pre', '', CET6_DICTIONARY_LICENSE)); info.append(license);
-    box.append(tabs, frequencies, info); host.append(box);
+    box.append(tabs, frequencies); host.append(box);
   }
 
   function continuation(state) {
@@ -241,20 +223,6 @@ export function createStudyViews({ host, getState, questionCard, start, resume, 
       const detail = node('article', 'word-detail surface');
       detail.append(button('← 返回词库', () => { selected = null; render(); }, 'text-button'), node('p', 'eyebrow', entry.topics.map((topic) => TOPICS[topic]).join(' · ')), node('h2', '', entry.word), node('p', 'word-definition', definition(entry)));
       detail.append(speechButton(entry.questions.find(q => q.audioText)?.audioText || entry.word, '朗读单词'));
-      const sourceWord = sixWords.get(entry.word);
-      if (sourceWord && entry.questions.some(q => q.bank === 'cet6')) detail.append(sourceLink(`六级大纲词 · 第 ${sourceWord.pdfPages.map(p => p - 5).join('、')} 页`, `${CET6_SOURCE.url}#page=${sourceWord.pdfPages[0]}`));
-      const basicWord = fourWords.get(entry.word);
-      if (basicWord && entry.questions.some(q => q.bank === 'cet4')) detail.append(sourceLink(`四级大纲词 · 第 ${basicWord.pdfPages.map(p => p - 5).join('、')} 页`, `${CET4_SOURCE.url}#page=${basicWord.pdfPages[0]}`));
-      const evidence = [...new Set(entry.questions.flatMap(frequencySources))];
-      if (evidence.length) {
-        const links = node('div', 'word-frequency');
-        links.append(node('p', 'muted', entry.questions.some(q => frequencySources(q).length >= 2) ? '高频 · 多渠道共同收录' : '收录词表'));
-        for (const id of evidence) {
-          const source = FREQUENCY_SOURCES.find(s => s.id === id);
-          const line = node('p'); line.append(sourceLink(source.title, source.url)); links.append(line);
-        }
-        detail.append(links);
-      }
       const examples = [...new Map(entry.questions.filter((q) => ['choice', 'fill', 'collocation', 'phrase', 'confusion', 'formation', 'reading'].includes(q.type)).map((q) => [q.variantGroup, q])).values()].slice(0, 2);
       for (const q of examples) {
         const example = node('div', 'word-example');

@@ -6,6 +6,7 @@ import { initAppearance } from './appearance.js';
 import { SCENE_PATHS } from '../content/scenes.js';
 import { localMediaUrl } from '../platform/media.js';
 import { initSpeechSettings } from './speech.js';
+import { CET6_DICTIONARY_LICENSE } from '../content/cet6-words.js';
 
 export async function downloadFile(name, content, type = 'application/json') {
   return saveTextFile(name, content, type);
@@ -13,6 +14,7 @@ export async function downloadFile(name, content, type = 'application/json') {
 
 export function initClientSettings({ legacy, notify, isBusy, onModel, beforeRestore }) {
   const $ = id=>document.getElementById(id);
+  $('dictionary-license').textContent = CET6_DICTIONARY_LICENSE;
   if (nativeRuntime()) {
     $('model-storage-hint').textContent = '选择服务商预设，或填写自定义接口。Key 加密保存在本机，并随请求发送给你配置的端点。';
     $('data-storage-hint').textContent = '聊天和学习记录保存在本机。卸载应用、清除应用数据或换设备前，请先导出备份。回收站可在对话列表中打开。';

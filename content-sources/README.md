@@ -67,13 +67,13 @@ appropriate、converse、invalid、staple 在大纲中同时有未标记与 ★ 
 
 - `frequency-sources.json` 保存材料 URL、下载字节数、SHA-256，以及词语对应的页码或网页链接。
 - `frequency-comparison.json` 保存逐词交集与渠道命中记录。
-- 应用单词页展示命中渠道；词库导出提供逐词来源与题型覆盖数据。
+- 词库导出提供逐词来源与题型覆盖数据。
 
 有道 2010 年四六级表的 Fq 属于查询或教材等指标，不能当作考试出现次数，因此不参与筛选。沪江 500 词资料的下载链接在核对时失效，扫描版《新东方 26 天四级高频词汇》未取得可核验的完整文字，两者也未计入。项目仅保存比对所需的词语与来源事实，不复制这些渠道的释义、例句或商业题目。
 
 ## 释义与许可
 
-中文释义采用社区词典 [ECDICT](https://github.com/skywind3000/ECDICT) 的 `ecdict.csv`，按大纲词条匹配，再结合项目校订文件生成练习释义。ECDICT 不作为四级、六级的级别依据。仓库保留 [ECDICT MIT 许可全文](ECDICT-LICENSE.txt)，应用来源面板同样包含该许可。
+中文释义采用社区词典 [ECDICT](https://github.com/skywind3000/ECDICT) 的 `ecdict.csv`，按大纲词条匹配，再结合项目校订文件生成练习释义。ECDICT 不作为四级、六级的级别依据。仓库保留 [ECDICT MIT 许可全文](ECDICT-LICENSE.txt)，应用「设置 → 数据 → 开源许可」同样包含该许可。
 
 | 项目 | 记录 |
 |---|---|
